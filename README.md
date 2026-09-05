@@ -2,21 +2,23 @@
 
 Production-oriented AI automation and orchestration platform.
 
-## Vision
-
-Automation Engine is designed to move beyond simple no-code workflows toward reliable AI systems that combine LLM routing, agents, APIs, data, human approval, retries, observability, and secure execution.
-
-## Initial architecture
+## Architecture
 
 - FastAPI control plane
-- Agent and LLM routing layer
-- Workflow/webhook execution boundary
-- PostgreSQL/Supabase-ready persistence
-- Redis-ready queue boundary
-- n8n integration boundary
-- Structured logging and health checks
-- Docker and GitHub Actions
+- Agent runtime and registry
+- Provider-neutral LLM routing with an OpenAI adapter
+- Execution state machine
+- n8n webhook integration boundary
+- Async job queue with in-memory and Redis adapters
+- Execution repository with in-memory and PostgreSQL adapters
+- Request correlation IDs, structured logging, and Prometheus metrics
+- Docker and GitHub Actions CI
 
-## Status
+## Development status
 
-Phase 1 — foundation and production architecture scaffold.
+- Phase 1 — service foundation
+- Phase 2 — execution and routing contracts
+- Phase 3 — agent runtime and orchestration foundations
+- Current — persistence, queue, worker, provider, and observability adapters
+
+External services are optional during local unit testing; reference adapters keep the core runtime testable without credentials.
