@@ -13,6 +13,8 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     anthropic_api_key: str = ""
     google_api_key: str = ""
+    ollama_base_url: str = ""
+    ollama_model: str = "llama3.2:3b"
     default_agent: str = "automation"
 
     model_config = SettingsConfigDict(
