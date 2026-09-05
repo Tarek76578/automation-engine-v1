@@ -4,16 +4,18 @@ from fastapi import APIRouter, HTTPException
 
 from app.core.agent_runtime import agent_runtime
 from app.core.config import settings
+from app.core.job_queue import queue
 from app.core.orchestrator import ExecutionOrchestrator
 from app.core.persistence import execution_repository
-from app.core.job_queue import queue
 from app.integrations.n8n import N8nClient
 from app.models.execution import Execution, ExecutionRequest
 
 router = APIRouter(prefix="/executions", tags=["executions"])
 
 n8n_client = N8nClient(settings.n8n_base_url) if settings.n8n_base_url else None
-orchestrator = ExecutionOrchestrator(execution_repository, queue, agent_runtime, n8n_client)
+orchestrator = ExecutionOrchestrator(
+    execution_repository, queue, agent_runtime, n8n_client
+)
 
 
 @router.post("", response_model=Execution, status_code=202)
