@@ -57,6 +57,7 @@ def _build_queue() -> Queue:
         return InMemoryQueue()
 
     from app.integrations.redis_queue import RedisQueue
+
     from redis.asyncio import Redis
 
     return RedisQueue(
