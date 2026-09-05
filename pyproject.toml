@@ -5,12 +5,11 @@ testpaths = ["tests"]
 [tool.ruff]
 line-length = 100
 target-version = "py312"
+src = ["."]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP"]
 
 [tool.ruff.lint.isort]
-src = ["."]
 known-first-party = ["app"]
 known-third-party = ["redis"]
-section-order = ["future", "standard-library", "third-party", "first-party", "local-folder"]
