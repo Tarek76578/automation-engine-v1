@@ -2,14 +2,16 @@ from __future__ import annotations
 
 import logging
 
-from app.core.job_queue import Job, InMemoryQueue
+from app.core.job_queue import InMemoryQueue, Job
 from app.core.orchestrator import ExecutionOrchestrator
 
 logger = logging.getLogger(__name__)
 
 
 class ExecutionWorker:
-    def __init__(self, queue: InMemoryQueue, orchestrator: ExecutionOrchestrator) -> None:
+    def __init__(
+        self, queue: InMemoryQueue, orchestrator: ExecutionOrchestrator
+    ) -> None:
         self.queue = queue
         self.orchestrator = orchestrator
 
