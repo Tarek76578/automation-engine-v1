@@ -24,11 +24,17 @@ async def test_execution_flows_through_queue_worker_and_agent() -> None:
     orchestrator = ExecutionOrchestrator(repository, queue, runtime)
 
     execution = await orchestrator.submit(
-        Execution(workflow="support", input={"agent": "support", "input": {"prompt": "hello"}}),
+        Execution(
+            workflow="support",
+            input={"agent": "support", "input": {"prompt": "hello"}},
+        ),
         idempotency_key="request-1",
     )
     duplicate = await orchestrator.submit(
-        Execution(workflow="support", input={"agent": "support", "input": {"prompt": "ignored"}}),
+        Execution(
+            workflow="support",
+            input={"agent": "support", "input": {"prompt": "ignored"}},
+        ),
         idempotency_key="request-1",
     )
 
@@ -47,17 +53,29 @@ async def test_execution_flows_through_queue_worker_and_agent() -> None:
 @pytest.mark.asyncio
 async def test_execution_retries_and_eventually_fails() -> None:
     registry = AgentRegistry()
-    registry.register(AgentDefinition(name="broken"), lambda task, definition: (_ for _ in ()).throw(RuntimeError("boom")))
+
+    def broken_handler(task, definition):
+        raise RuntimeError("boom")
+
+    registry.register(AgentDefinition(name="broken"), broken_handler)
     runtime = AgentRuntime(registry, LLMRouter())
     repository = InMemoryExecutionRepository()
     queue = InMemoryQueue()
-    orchestrator = ExecutionOrchestrator(repository, queue, runtime, max_attempts=2)
-    execution = await orchestrator.submit(Execution(workflow="broken", input={"agent": "broken"}))
+    orchestrator = ExecutionOrchestrator(
+        repository, queue, runtime, max_attempts=2
+    )
+    execution = await orchestrator.submit(
+        Execution(workflow="broken", input={"agent": "broken"})
+    )
 
     await ExecutionWorker(queue, orchestrator).run_once()
     first = await repository.get(str(execution.id))
-    assert first is not None and first.status is ExecutionStatus.queued and first.attempts == 1
+    assert first is not None
+    assert first.status is ExecutionStatus.queued
+    assert first.attempts == 1
 
     await ExecutionWorker(queue, orchestrator).run_once()
     final = await repository.get(str(execution.id))
-    assert final is not None and final.status is ExecutionStatus.failed and final.attempts == 2
+    assert final is not None
+    assert final.status is ExecutionStatus.failed
+    assert final.attempts == 2
