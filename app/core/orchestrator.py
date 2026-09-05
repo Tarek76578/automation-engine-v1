@@ -16,27 +16,24 @@ logger = logging.getLogger(__name__)
 
 
 class ExecutionOrchestrator:
-    """Coordinates the durable execution lifecycle.
+    """Coordinates the execution lifecycle across queue, agent, integrations, and persistence."""
 
-    API requests only create and enqueue work. The worker owns execution,
-    state transitions, persistence, retry accounting, and optional n8n output.
-    """
-
-    def __init__(
-        self,
-        repository: ExecutionRepository,
-        queue: Queue,
-        runtime: AgentRuntime,
-        n8n: N8nClient | None = None,
-        max_attempts: int = 3,
-    ) -> None:
+    def __init__(self, repository: ExecutionRepository, queue: Queue, runtime: AgentRuntime, n8n: N8nClient | None = None, max_attempts: int = 3) -> None:
         self.repository = repository
         self.queue = queue
         self.runtime = runtime
         self.n8n = n8n
         self.max_attempts = max(1, max_attempts)
+        self._idempotency: dict[str, str] = {}
 
-    async def submit(self, execution: Execution) -> Execution:
+    async def submit(self, execution: Execution, idempotency_key: str | None = None) -> Execution:
+        if idempotency_key:
+            existing_id = self._idempotency.get(idempotency_key)
+            if existing_id:
+                existing = await self.repository.get(existing_id)
+                if existing is not None:
+                    return existing
+            self._idempotency[idempotency_key] = str(execution.id)
         existing = await self.repository.get(str(execution.id))
         if existing is not None:
             return existing
@@ -50,35 +47,23 @@ class ExecutionOrchestrator:
             return None
         if execution.status in {ExecutionStatus.succeeded, ExecutionStatus.failed}:
             return execution
-
         transition(execution, ExecutionStatus.running)
         execution.attempts += 1
         execution.updated_at = datetime.now(timezone.utc)
         await self.repository.save(execution)
-
         try:
             agent_name = str(execution.input.get("agent", execution.workflow))
             task_input = execution.input.get("input", execution.input)
             if not isinstance(task_input, dict):
                 task_input = {"value": task_input}
-
-            result = await self.runtime.execute_async(
-                AgentTask(agent=agent_name, input=task_input)
-            )
+            result = await self.runtime.execute_async(AgentTask(agent=agent_name, input=task_input))
             output: dict[str, Any] = dict(result.output)
-            output["agent"] = agent_name
-            output["provider"] = result.provider
-            output["model"] = result.model
-
+            output.update({"agent": agent_name, "provider": result.provider, "model": result.model})
             webhook = execution.input.get("n8n_webhook")
             if webhook:
                 if self.n8n is None:
                     raise RuntimeError("n8n webhook requested but N8nClient is not configured")
-                output["n8n"] = await self.n8n.trigger_webhook(
-                    str(webhook),
-                    {"execution_id": str(execution.id), "output": output},
-                )
-
+                output["n8n"] = await self.n8n.trigger_webhook(str(webhook), {"execution_id": str(execution.id), "output": output})
             transition(execution, ExecutionStatus.succeeded)
             execution.output = output
             execution.error = None
@@ -90,10 +75,7 @@ class ExecutionOrchestrator:
                 transition(execution, ExecutionStatus.queued)
                 await self.repository.save(execution)
                 await self.queue.enqueue(Job(execution_id=execution.id))
-                logger.warning(
-                    "execution retry scheduled",
-                    extra={"execution_id": execution_id, "attempt": execution.attempts},
-                )
+                logger.warning("execution retry scheduled", extra={"execution_id": execution_id, "attempt": execution.attempts})
                 return execution
         execution.updated_at = datetime.now(timezone.utc)
         await self.repository.save(execution)
