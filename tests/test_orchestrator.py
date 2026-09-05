@@ -108,7 +108,7 @@ async def test_execution_uses_default_agent_for_unknown_workflow() -> None:
 
 
 @pytest.mark.asyncio
-async def test_execution_retries_and_eventually_fails() -> None:
+async def test_execution_retries_and_eventually_fails_to_dlq() -> None:
     registry = AgentRegistry()
 
     def broken_handler(task, definition):
@@ -119,7 +119,11 @@ async def test_execution_retries_and_eventually_fails() -> None:
     repository = InMemoryExecutionRepository()
     queue = InMemoryQueue()
     orchestrator = ExecutionOrchestrator(
-        repository, queue, runtime, max_attempts=2
+        repository,
+        queue,
+        runtime,
+        max_attempts=2,
+        retry_base_delay_seconds=0,
     )
     execution = await orchestrator.submit(
         Execution(workflow="broken", input={"agent": "broken"})
@@ -130,9 +134,27 @@ async def test_execution_retries_and_eventually_fails() -> None:
     assert first is not None
     assert first.status is ExecutionStatus.queued
     assert first.attempts == 1
+    assert queue.dead_letters == []
 
     await ExecutionWorker(queue, orchestrator).run_once()
     final = await repository.get(str(execution.id))
     assert final is not None
     assert final.status is ExecutionStatus.failed
     assert final.attempts == 2
+    assert len(queue.dead_letters) == 1
+    assert queue.dead_letters[0][1] == "boom"
+
+
+def test_retry_delay_is_exponential_and_bounded() -> None:
+    orchestrator = ExecutionOrchestrator(
+        InMemoryExecutionRepository(),
+        InMemoryQueue(),
+        AgentRuntime(AgentRegistry(), LLMRouter()),
+        retry_base_delay_seconds=2,
+        retry_max_delay_seconds=5,
+    )
+
+    assert orchestrator._retry_delay(1) == 2
+    assert orchestrator._retry_delay(2) == 4
+    assert orchestrator._retry_delay(3) == 5
+    assert orchestrator._retry_delay(10) == 5
