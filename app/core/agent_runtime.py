@@ -84,6 +84,13 @@ class AgentRuntime:
 
 
 registry = AgentRegistry()
+registry.register(
+    AgentDefinition(
+        name=settings.default_agent,
+        system_prompt="You are the default automation agent. Execute the requested automation task accurately and return structured results.",
+        provider="openai" if settings.openai_api_key else None,
+    )
+)
 providers: dict[str, LLMProvider] = {}
 if settings.openai_api_key:
     providers["openai"] = OpenAIProvider(settings.openai_api_key)
