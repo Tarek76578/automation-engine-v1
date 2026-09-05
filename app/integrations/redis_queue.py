@@ -14,10 +14,12 @@ class RedisQueue(Queue):
         redis: Redis,
         key: str = "automation:jobs",
         processing_key: str = "automation:jobs:processing",
+        dead_letter_key: str = "automation:jobs:dead-letter",
     ) -> None:
         self.redis = redis
         self.key = key
         self.processing_key = processing_key
+        self.dead_letter_key = dead_letter_key
 
     @staticmethod
     def _encode(job: Job) -> str:
@@ -38,18 +40,22 @@ class RedisQueue(Queue):
         )
 
     async def enqueue(self, job: Job, delay_seconds: float = 0.0) -> None:
+        payload = self._encode(job)
         if delay_seconds > 0:
+            now = float((await self.redis.time())[0])
             await self.redis.zadd(
                 f"{self.key}:delayed",
-                {self._encode(job): float(await self.redis.time()[0]) + delay_seconds},
+                {payload: now + delay_seconds},
             )
             return
-        await self.redis.rpush(self.key, self._encode(job))
+        await self.redis.rpush(self.key, payload)
 
     async def _promote_due(self) -> None:
         delayed_key = f"{self.key}:delayed"
         now = float((await self.redis.time())[0])
-        items = await self.redis.zrangebyscore(delayed_key, "-inf", now, start=0, num=50)
+        items = await self.redis.zrangebyscore(
+            delayed_key, "-inf", now, start=0, num=50
+        )
         if not items:
             return
         async with self.redis.pipeline(transaction=True) as pipe:
@@ -67,6 +73,17 @@ class RedisQueue(Queue):
 
     async def ack(self, job: Job) -> None:
         await self.redis.lrem(self.processing_key, 1, self._encode(job))
+
+    async def dead_letter(self, job: Job, reason: str) -> None:
+        payload = self._encode(job)
+        record = json.dumps(
+            {"job": json.loads(payload), "reason": reason},
+            separators=(",", ":"),
+        )
+        async with self.redis.pipeline(transaction=True) as pipe:
+            pipe.lrem(self.processing_key, 1, payload)
+            pipe.rpush(self.dead_letter_key, record)
+            await pipe.execute()
 
     async def recover(self) -> int:
         items = await self.redis.lrange(self.processing_key, 0, -1)
