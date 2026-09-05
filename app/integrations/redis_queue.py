@@ -9,7 +9,9 @@ from app.core.job_queue import Job, Queue
 
 
 _PROMOTE_DUE_LUA = """
-local items = redis.call('ZRANGEBYSCORE', KEYS[1], '-inf', ARGV[1], 'LIMIT', 0, ARGV[2])
+local items = redis.call(
+  'ZRANGEBYSCORE', KEYS[1], '-inf', ARGV[1], 'LIMIT', 0, ARGV[2]
+)
 for _, raw in ipairs(items) do
   if redis.call('ZREM', KEYS[1], raw) == 1 then
     redis.call('RPUSH', KEYS[2], raw)
@@ -19,7 +21,9 @@ return #items
 """
 
 _RECLAIM_LUA = """
-local items = redis.call('ZRANGEBYSCORE', KEYS[1], '-inf', ARGV[1], 'LIMIT', 0, ARGV[2])
+local items = redis.call(
+  'ZRANGEBYSCORE', KEYS[1], '-inf', ARGV[1], 'LIMIT', 0, ARGV[2]
+)
 local reclaimed = 0
 for _, raw in ipairs(items) do
   if redis.call('ZREM', KEYS[1], raw) == 1 then
@@ -78,7 +82,9 @@ class RedisQueue(Queue):
         payload = self._encode(self._without_claim(job))
         if delay_seconds > 0:
             now = float((await self.redis.time())[0])
-            await self.redis.zadd(self.delayed_key, {payload: now + delay_seconds})
+            await self.redis.zadd(
+                self.delayed_key, {payload: now + delay_seconds}
+            )
             return
         await self.redis.rpush(self.key, payload)
 
@@ -121,7 +127,10 @@ class RedisQueue(Queue):
                 pipe.rpush(self.processing_key, processing_payload)
                 pipe.zadd(
                     self.claims_key,
-                    {processing_payload: claimed_at + self.visibility_timeout_seconds},
+                    {
+                        processing_payload:
+                            claimed_at + self.visibility_timeout_seconds
+                    },
                 )
                 await pipe.execute()
             return claimed_job
@@ -140,7 +149,10 @@ class RedisQueue(Queue):
             return
         payload = self._encode(job)
         record = json.dumps(
-            {"job": json.loads(self._encode(self._without_claim(job))), "reason": reason},
+            {
+                "job": json.loads(self._encode(self._without_claim(job))),
+                "reason": reason,
+            },
             separators=(",", ":"),
         )
         async with self.redis.pipeline(transaction=True) as pipe:
