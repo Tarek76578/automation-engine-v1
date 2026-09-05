@@ -11,6 +11,7 @@ from app.core.config import settings
 class Job:
     execution_id: UUID
     job_id: UUID = field(default_factory=uuid4)
+    claim_token: str | None = None
 
 
 class Queue:
@@ -58,7 +59,11 @@ def _build_queue() -> Queue:
 
     from app.integrations.redis_queue import RedisQueue
 
-    return RedisQueue(Redis.from_url(settings.redis_url))
+    return RedisQueue(
+        Redis.from_url(settings.redis_url),
+        visibility_timeout_seconds=settings.redis_visibility_timeout_seconds,
+        reclaim_batch_size=settings.redis_reclaim_batch_size,
+    )
 
 
 queue = _build_queue()
