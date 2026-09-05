@@ -3,9 +3,8 @@ from __future__ import annotations
 import json
 from uuid import UUID, uuid4
 
-from redis.asyncio import Redis
-
 from app.core.job_queue import Job, Queue
+from redis.asyncio import Redis
 
 
 _PROMOTE_DUE_LUA = """
