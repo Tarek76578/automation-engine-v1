@@ -2,6 +2,7 @@ from datetime import datetime
 from uuid import UUID
 
 from app.models.execution import Execution, ExecutionStatus
+
 from sqlalchemy import JSON, DateTime, String, select, text
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.exc import IntegrityError
