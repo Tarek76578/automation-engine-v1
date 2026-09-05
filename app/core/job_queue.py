@@ -4,8 +4,6 @@ import asyncio
 from dataclasses import dataclass, field
 from uuid import UUID, uuid4
 
-from redis.asyncio import Redis
-
 from app.core.config import settings
 
 
