@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
+from app.core.config import settings
 from app.models.execution import Execution
 
 
@@ -37,4 +38,11 @@ class InMemoryExecutionRepository:
         return self._items.get(execution_id) if execution_id else None
 
 
-execution_repository = InMemoryExecutionRepository()
+if settings.database_url:
+    from app.integrations.postgres import PostgresExecutionRepository
+
+    execution_repository: ExecutionRepository = PostgresExecutionRepository(
+        settings.database_url
+    )
+else:
+    execution_repository = InMemoryExecutionRepository()
