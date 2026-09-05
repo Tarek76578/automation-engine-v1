@@ -1,12 +1,11 @@
-from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
-
 from app.api.agents import router as agents_router
 from app.api.executions import router as executions_router
 from app.api.health import router as health_router
 from app.api.metrics import router as metrics_router
 from app.core.config import settings
 from app.core.observability import configure_logging, new_request_id, request_id_var
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 
 configure_logging(settings.log_level)
 app = FastAPI(title=settings.app_name, version="0.4.0")
