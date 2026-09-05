@@ -5,6 +5,7 @@ from logging.config import fileConfig
 
 from app.core.config import settings
 from app.integrations.postgres import Base
+
 from alembic import context
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
