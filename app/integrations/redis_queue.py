@@ -36,6 +36,8 @@ class RedisQueue(Queue):
 
     @staticmethod
     def _decode(raw: str | bytes) -> Job:
+        if isinstance(raw, bytes):
+            raw = raw.decode("utf-8")
         payload = json.loads(raw)
         return Job(
             execution_id=UUID(payload["execution_id"]),
@@ -71,8 +73,8 @@ class RedisQueue(Queue):
     async def dequeue(self) -> Job:
         while True:
             await self._promote_due()
-            _, raw = await self.redis.brpoplpush(self.key, self.processing_key, timeout=1)
-            if not raw:
+            raw = await self.redis.brpoplpush(self.key, self.processing_key, timeout=1)
+            if raw is None:
                 continue
 
             job = self._decode(raw)
