@@ -4,8 +4,8 @@ Revision ID: 001_create_executions
 Revises:
 """
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 from sqlalchemy.dialects import postgresql
 
 revision = "001_create_executions"
