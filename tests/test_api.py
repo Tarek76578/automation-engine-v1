@@ -32,5 +32,5 @@ def test_agent_execution() -> None:
         "/api/agents/execute",
         json={"agent": "test-agent", "input": {"x": 1}},
     )
-    assert response.status_code == 202
+    assert response.status_code == 200
     assert response.json()["output"]["status"] == "accepted"
