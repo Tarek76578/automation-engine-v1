@@ -23,6 +23,9 @@ class Queue:
     async def ack(self, job: Job) -> None:
         raise NotImplementedError
 
+    async def dead_letter(self, job: Job, reason: str) -> None:
+        raise NotImplementedError
+
     async def recover(self) -> int:
         return 0
 
@@ -30,6 +33,7 @@ class Queue:
 class InMemoryQueue(Queue):
     def __init__(self) -> None:
         self._queue: asyncio.Queue[Job] = asyncio.Queue()
+        self.dead_letters: list[tuple[Job, str]] = []
 
     async def enqueue(self, job: Job, delay_seconds: float = 0.0) -> None:
         if delay_seconds > 0:
@@ -42,7 +46,8 @@ class InMemoryQueue(Queue):
     async def ack(self, job: Job) -> None:
         self._queue.task_done()
 
-    def task_done(self) -> None:
+    async def dead_letter(self, job: Job, reason: str) -> None:
+        self.dead_letters.append((job, reason))
         self._queue.task_done()
 
 
