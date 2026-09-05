@@ -1,5 +1,3 @@
-from enum import Enum
-
 from app.models.execution import Execution, ExecutionStatus
 
 
