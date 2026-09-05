@@ -7,6 +7,7 @@ from app.core.config import settings
 from app.core.router import LLMRouter
 from app.models.agent import AgentDefinition, AgentResult, AgentTask
 from app.providers.base import LLMProvider, LLMRequest
+from app.providers.ollama import OllamaProvider
 from app.providers.openai import OpenAIProvider
 
 AgentHandler = Callable[
@@ -84,17 +85,34 @@ class AgentRuntime:
 
 
 registry = AgentRegistry()
+
+# Prefer Ollama when configured, so the demo can run without paid API keys.
+if settings.ollama_base_url:
+    default_provider = "ollama"
+    default_model = settings.ollama_model
+elif settings.openai_api_key:
+    default_provider = "openai"
+    default_model = None
+else:
+    default_provider = None
+    default_model = None
+
 registry.register(
     AgentDefinition(
         name=settings.default_agent,
         system_prompt=(
             "You are the default automation agent. Execute the requested "
-            "automation task accurately and return structured results."
+            "automation task accurately and return concise structured results."
         ),
-        provider="openai" if settings.openai_api_key else None,
+        provider=default_provider,
+        model=default_model,
     )
 )
+
 providers: dict[str, LLMProvider] = {}
+if settings.ollama_base_url:
+    providers["ollama"] = OllamaProvider(settings.ollama_base_url)
 if settings.openai_api_key:
     providers["openai"] = OpenAIProvider(settings.openai_api_key)
+
 agent_runtime = AgentRuntime(registry, LLMRouter(), providers)
