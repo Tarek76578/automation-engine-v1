@@ -3,9 +3,8 @@ from __future__ import annotations
 import json
 from uuid import UUID, uuid4
 
-from redis.asyncio import Redis
-
 from app.core.job_queue import Job, Queue
+from redis.asyncio import Redis
 
 
 _PROMOTE_DUE_LUA = """
@@ -127,10 +126,7 @@ class RedisQueue(Queue):
                 pipe.rpush(self.processing_key, processing_payload)
                 pipe.zadd(
                     self.claims_key,
-                    {
-                        processing_payload:
-                            claimed_at + self.visibility_timeout_seconds
-                    },
+                    {processing_payload: claimed_at + self.visibility_timeout_seconds},
                 )
                 await pipe.execute()
             return claimed_job
