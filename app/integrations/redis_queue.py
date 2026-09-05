@@ -82,9 +82,7 @@ class RedisQueue(Queue):
         payload = self._encode(self._without_claim(job))
         if delay_seconds > 0:
             now = float((await self.redis.time())[0])
-            await self.redis.zadd(
-                self.delayed_key, {payload: now + delay_seconds}
-            )
+            await self.redis.zadd(self.delayed_key, {payload: now + delay_seconds})
             return
         await self.redis.rpush(self.key, payload)
 
