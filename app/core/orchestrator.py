@@ -26,12 +26,25 @@ class ExecutionOrchestrator:
         runtime: AgentRuntime,
         n8n: N8nClient | None = None,
         max_attempts: int = 3,
+        retry_base_delay_seconds: float = 2.0,
+        retry_max_delay_seconds: float = 60.0,
     ) -> None:
         self.repository = repository
         self.queue = queue
         self.runtime = runtime
         self.n8n = n8n
         self.max_attempts = max(1, max_attempts)
+        self.retry_base_delay_seconds = max(0.0, retry_base_delay_seconds)
+        self.retry_max_delay_seconds = max(
+            self.retry_base_delay_seconds, retry_max_delay_seconds
+        )
+
+    def _retry_delay(self, attempt: int) -> float:
+        exponent = max(0, attempt - 1)
+        return min(
+            self.retry_max_delay_seconds,
+            self.retry_base_delay_seconds * (2**exponent),
+        )
 
     async def submit(
         self, execution: Execution, idempotency_key: str | None = None
@@ -103,12 +116,14 @@ class ExecutionOrchestrator:
             else:
                 transition(execution, ExecutionStatus.queued)
                 await self.repository.save(execution)
-                await self.queue.enqueue(Job(execution_id=execution.id))
+                delay = self._retry_delay(execution.attempts)
+                await self.queue.enqueue(Job(execution_id=execution.id), delay_seconds=delay)
                 logger.warning(
                     "execution retry scheduled",
                     extra={
                         "execution_id": execution_id,
                         "attempt": execution.attempts,
+                        "retry_delay_seconds": delay,
                     },
                 )
                 return execution
