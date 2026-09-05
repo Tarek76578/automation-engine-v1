@@ -1,11 +1,9 @@
-from __future__ import annotations
-
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import JSON, DateTime, String
+from sqlalchemy import JSON, DateTime, String, select
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from app.models.execution import Execution, ExecutionStatus
@@ -25,16 +23,28 @@ class ExecutionRow(Base):
     output: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     error: Mapped[str | None] = mapped_column(String, nullable=True)
     attempts: Mapped[int] = mapped_column(default=0)
+    idempotency_key: Mapped[str | None] = mapped_column(
+        String(200), unique=True, nullable=True, index=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
 class PostgresExecutionRepository:
     def __init__(self, database_url: str) -> None:
-        self.engine = create_async_engine(database_url, pool_pre_ping=True)
+        self.engine: AsyncEngine = create_async_engine(database_url, pool_pre_ping=True)
         self.sessions = async_sessionmaker(self.engine, expire_on_commit=False)
+        self._schema_ready = False
+
+    async def ensure_schema(self) -> None:
+        if self._schema_ready:
+            return
+        async with self.engine.begin() as connection:
+            await connection.run_sync(Base.metadata.create_all)
+        self._schema_ready = True
 
     async def save(self, execution: Execution) -> Execution:
+        await self.ensure_schema()
         async with self.sessions() as session:
             row = ExecutionRow(
                 id=execution.id,
@@ -44,6 +54,7 @@ class PostgresExecutionRepository:
                 output=execution.output,
                 error=execution.error,
                 attempts=execution.attempts,
+                idempotency_key=execution.idempotency_key,
                 created_at=execution.created_at,
                 updated_at=execution.updated_at,
             )
@@ -52,18 +63,31 @@ class PostgresExecutionRepository:
         return execution
 
     async def get(self, execution_id: str) -> Execution | None:
+        await self.ensure_schema()
         async with self.sessions() as session:
             row = await session.get(ExecutionRow, UUID(execution_id))
-            if row is None:
-                return None
-            return Execution(
-                id=row.id,
-                workflow=row.workflow,
-                status=ExecutionStatus(row.status),
-                input=row.input,
-                output=row.output,
-                error=row.error,
-                attempts=row.attempts,
-                created_at=row.created_at,
-                updated_at=row.updated_at,
+            return self._to_execution(row) if row is not None else None
+
+    async def get_by_idempotency_key(self, key: str) -> Execution | None:
+        await self.ensure_schema()
+        async with self.sessions() as session:
+            result = await session.execute(
+                select(ExecutionRow).where(ExecutionRow.idempotency_key == key)
             )
+            row = result.scalar_one_or_none()
+            return self._to_execution(row) if row is not None else None
+
+    @staticmethod
+    def _to_execution(row: ExecutionRow) -> Execution:
+        return Execution(
+            id=row.id,
+            workflow=row.workflow,
+            status=ExecutionStatus(row.status),
+            input=row.input,
+            output=row.output,
+            error=row.error,
+            attempts=row.attempts,
+            idempotency_key=row.idempotency_key,
+            created_at=row.created_at,
+            updated_at=row.updated_at,
+        )
