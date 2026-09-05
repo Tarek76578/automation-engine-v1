@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from app.core.agent_runtime import AgentRuntime
+from app.core.config import settings
 from app.core.job_queue import Job, Queue
 from app.core.persistence import ExecutionRepository
 from app.core.state_machine import transition
@@ -16,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 
 class ExecutionOrchestrator:
-    """Coordinates the execution lifecycle across queue, agent, integrations, and persistence."""
+    """Coordinates the execution lifecycle across queue, agents, integrations, and persistence."""
 
     def __init__(
         self,
@@ -58,7 +59,13 @@ class ExecutionOrchestrator:
         execution.updated_at = datetime.now(UTC)
         await self.repository.save(execution)
         try:
-            agent_name = str(execution.input.get("agent", execution.workflow))
+            requested_agent = execution.input.get("agent")
+            if requested_agent:
+                agent_name = str(requested_agent)
+            elif self.runtime.registry.get(execution.workflow) is not None:
+                agent_name = execution.workflow
+            else:
+                agent_name = settings.default_agent
             task_input = execution.input.get("input", execution.input)
             if not isinstance(task_input, dict):
                 task_input = {"value": task_input}
@@ -69,6 +76,7 @@ class ExecutionOrchestrator:
             output.update(
                 {
                     "agent": agent_name,
+                    "workflow": execution.workflow,
                     "provider": result.provider,
                     "model": result.model,
                 }
