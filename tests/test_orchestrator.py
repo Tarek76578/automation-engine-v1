@@ -21,7 +21,7 @@ async def test_execution_flows_through_queue_worker_and_agent() -> None:
     runtime = AgentRuntime(registry, LLMRouter())
     repository = InMemoryExecutionRepository()
     queue = InMemoryQueue()
-    orchestrator = ExecutionOrchestrator(repository, queue)
+    orchestrator = ExecutionOrchestrator(repository, queue, runtime)
 
     execution = await orchestrator.submit(
         Execution(
