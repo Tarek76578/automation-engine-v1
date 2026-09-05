@@ -1,7 +1,7 @@
+import pytest
+
 from app.core.state_machine import InvalidTransition, transition
 from app.models.execution import Execution, ExecutionStatus
-
-import pytest
 
 
 def test_valid_transition() -> None:
