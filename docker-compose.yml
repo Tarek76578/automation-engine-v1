@@ -1,4 +1,25 @@
 services:
+  app:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/automation
+      REDIS_URL: redis://redis:6379/0
+      N8N_BASE_URL: http://n8n:5678
+      OLLAMA_BASE_URL: http://ollama:11434/v1
+      OLLAMA_MODEL: llama3.2:3b
+      DEFAULT_AGENT: automation
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      ollama:
+        condition: service_started
+      n8n:
+        condition: service_started
+
   postgres:
     image: postgres:17
     environment:
@@ -9,11 +30,42 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d automation"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
 
   redis:
     image: redis:8
     ports:
       - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+
+  n8n:
+    image: n8nio/n8n:latest
+    ports:
+      - "5678:5678"
+    environment:
+      N8N_SECURE_COOKIE: "false"
+      N8N_DIAGNOSTICS_ENABLED: "false"
+      N8N_PERSONALIZATION_ENABLED: "false"
+      N8N_USER_MANAGEMENT_DISABLED: "true"
+    volumes:
+      - n8n_data:/home/node/.n8n
 
 volumes:
   postgres_data:
+  ollama_data:
+  n8n_data:
