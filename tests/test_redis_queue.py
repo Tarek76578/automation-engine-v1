@@ -6,6 +6,7 @@ from uuid import uuid4
 
 from app.core.job_queue import Job
 from app.integrations.redis_queue import RedisQueue
+
 import pytest
 import pytest_asyncio
 from redis.asyncio import Redis
