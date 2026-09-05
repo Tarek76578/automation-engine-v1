@@ -27,5 +27,6 @@ class Execution(BaseModel):
     output: dict | None = None
     error: str | None = None
     attempts: int = 0
+    idempotency_key: str | None = Field(default=None, max_length=200)
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
