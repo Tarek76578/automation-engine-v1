@@ -55,9 +55,9 @@ class InMemoryQueue(Queue):
 def _build_queue() -> Queue:
     if not settings.redis_url:
         return InMemoryQueue()
-    from redis.asyncio import Redis
 
     from app.integrations.redis_queue import RedisQueue
+    from redis.asyncio import Redis
 
     return RedisQueue(
         Redis.from_url(settings.redis_url),
