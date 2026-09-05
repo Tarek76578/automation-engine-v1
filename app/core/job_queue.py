@@ -4,6 +4,8 @@ import asyncio
 from dataclasses import dataclass, field
 from uuid import UUID, uuid4
 
+from redis.asyncio import Redis
+
 from app.core.config import settings
 
 
@@ -56,9 +58,9 @@ def _build_queue() -> Queue:
     if not settings.redis_url:
         return InMemoryQueue()
 
-    from app.integrations.redis_queue import RedisQueue
-
     from redis.asyncio import Redis
+
+    from app.integrations.redis_queue import RedisQueue
 
     return RedisQueue(
         Redis.from_url(settings.redis_url),
