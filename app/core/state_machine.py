@@ -10,6 +10,7 @@ _ALLOWED: dict[ExecutionStatus, set[ExecutionStatus]] = {
     ExecutionStatus.running: {
         ExecutionStatus.succeeded,
         ExecutionStatus.failed,
+        ExecutionStatus.queued,
         ExecutionStatus.waiting_approval,
     },
     ExecutionStatus.waiting_approval: {
