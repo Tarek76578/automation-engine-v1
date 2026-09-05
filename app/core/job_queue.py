@@ -44,12 +44,15 @@ class InMemoryQueue(Queue):
     async def dequeue(self) -> Job:
         return await self._queue.get()
 
-    async def ack(self, job: Job) -> None:
+    def task_done(self) -> None:
         self._queue.task_done()
+
+    async def ack(self, job: Job) -> None:
+        self.task_done()
 
     async def dead_letter(self, job: Job, reason: str) -> None:
         self.dead_letters.append((job, reason))
-        self._queue.task_done()
+        self.task_done()
 
 
 def _build_queue() -> Queue:
