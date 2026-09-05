@@ -44,9 +44,11 @@ class ExecutionOrchestrator:
         existing = await self.repository.get(str(execution.id))
         if existing is not None:
             return existing
-        await self.repository.save(execution)
+        saved = await self.repository.save(execution)
+        if str(saved.id) != str(execution.id):
+            return saved
         await self.queue.enqueue(Job(execution_id=execution.id))
-        return execution
+        return saved
 
     async def process(self, execution_id: str) -> Execution | None:
         execution = await self.repository.get(execution_id)
