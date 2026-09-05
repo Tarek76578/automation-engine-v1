@@ -4,12 +4,16 @@ from fastapi.responses import JSONResponse
 from app.api.agents import router as agents_router
 from app.api.executions import router as executions_router
 from app.api.health import router as health_router
-from app.core.observability import new_request_id, request_id_var
+from app.api.metrics import router as metrics_router
+from app.core.config import settings
+from app.core.observability import configure_logging, new_request_id, request_id_var
 
-app = FastAPI(title="Automation Engine", version="0.3.0")
+configure_logging(settings.log_level)
+app = FastAPI(title=settings.app_name, version="0.4.0")
 app.include_router(health_router, prefix="/api")
 app.include_router(executions_router, prefix="/api")
 app.include_router(agents_router, prefix="/api")
+app.include_router(metrics_router, prefix="/api")
 
 
 @app.middleware("http")
@@ -28,4 +32,4 @@ async def correlation_middleware(request: Request, call_next):
 
 @app.get("/")
 def root() -> dict:
-    return {"service": "automation-engine", "version": "0.3.0", "status": "ok"}
+    return {"service": "automation-engine", "version": "0.4.0", "status": "ok"}
