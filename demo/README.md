@@ -5,28 +5,28 @@ This demo runs the Automation Engine with PostgreSQL, Redis, Ollama and n8n. No 
 ## Start
 
 ```bash
+git clone https://github.com/Tarek76578/automation-engine-v1.git
+cd automation-engine-v1
+git checkout phase-4-hardening-v3
 docker compose up -d --build
 ```
 
-Pull the demo model once:
+The stack now automatically:
 
-```bash
-docker compose exec ollama ollama pull llama3.2:3b
-```
+- starts PostgreSQL and Redis;
+- starts Ollama and pulls `llama3.2:3b` if it is not already present;
+- imports the demo n8n workflow on first startup;
+- starts a dedicated execution worker connected to Redis.
 
-Open n8n at `http://localhost:5678`, import `demo/n8n/automation-engine-demo.json`, then activate the workflow.
+Open:
 
-The webhook path is:
+- Automation Engine: `http://localhost:8000`
+- Health: `http://localhost:8000/api/health`
+- n8n: `http://localhost:5678`
 
-```text
-/webhook/automation-engine-demo
-```
+## Run the real demo
 
-The Automation Engine is available at `http://localhost:8000`.
-
-## Run an AI execution
-
-Create an execution with an n8n webhook target:
+Create an execution. Do not call `/run`: the worker consumes the Redis job automatically.
 
 ```bash
 curl -X POST http://localhost:8000/api/executions \
@@ -40,20 +40,32 @@ curl -X POST http://localhost:8000/api/executions \
   }'
 ```
 
-The API returns an execution id. Run it with:
-
-```bash
-curl -X POST http://localhost:8000/api/executions/<EXECUTION_ID>/run
-```
-
-Then inspect the execution:
+The API returns an execution id. Wait a few seconds, then inspect it:
 
 ```bash
 curl http://localhost:8000/api/executions/<EXECUTION_ID>
 ```
 
-The successful output should contain `provider: "ollama"`, the generated `text`, and the n8n response.
+A successful result contains the Ollama provider/model, generated AI text, and the n8n response.
 
-## Important
+## Verify the services
+
+```bash
+docker compose ps
+docker compose logs --tail=100 worker
+```
+
+The intended flow is:
+
+`HTTP request → Automation Engine → Redis → Worker → Ollama → n8n webhook → persisted execution result`
+
+## Reset the demo
+
+To remove the demo data and force a fresh model/workflow initialization:
+
+```bash
+docker compose down -v
+docker compose up -d --build
+```
 
 The compose stack is intended for local development/demo use. Do not expose PostgreSQL, Redis, n8n or Ollama directly to the public internet without authentication and network controls.

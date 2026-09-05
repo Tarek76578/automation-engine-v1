@@ -16,9 +16,29 @@ services:
       redis:
         condition: service_healthy
       ollama:
-        condition: service_started
+        condition: service_healthy
       n8n:
-        condition: service_started
+        condition: service_healthy
+
+  worker:
+    build: .
+    command: ["python", "-m", "app.worker_main"]
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/automation
+      REDIS_URL: redis://redis:6379/0
+      N8N_BASE_URL: http://n8n:5678
+      OLLAMA_BASE_URL: http://ollama:11434/v1
+      OLLAMA_MODEL: llama3.2:3b
+      DEFAULT_AGENT: automation
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      ollama:
+        condition: service_healthy
+      n8n:
+        condition: service_healthy
 
   postgres:
     image: postgres:17
@@ -26,8 +46,6 @@ services:
       POSTGRES_DB: automation
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
-    ports:
-      - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -38,8 +56,6 @@ services:
 
   redis:
     image: redis:8
-    ports:
-      - "6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -52,6 +68,13 @@ services:
       - "11434:11434"
     volumes:
       - ollama_data:/root/.ollama
+    command: ["/bin/sh", "-c", "ollama serve & pid=$$!; until ollama list >/dev/null 2>&1; do sleep 2; done; ollama pull llama3.2:3b; wait $$pid"]
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list | grep -q 'llama3.2:3b'"]
+      interval: 10s
+      timeout: 5s
+      retries: 60
+      start_period: 10s
 
   n8n:
     image: n8nio/n8n:latest
@@ -64,6 +87,14 @@ services:
       N8N_USER_MANAGEMENT_DISABLED: "true"
     volumes:
       - n8n_data:/home/node/.n8n
+      - ./demo/n8n/automation-engine-demo.json:/demo/automation-engine-demo.json:ro
+    command: ["/bin/sh", "-c", "if [ ! -f /home/node/.n8n/.automation-engine-demo-imported ]; then n8n import:workflow --input=/demo/automation-engine-demo.json && touch /home/node/.n8n/.automation-engine-demo-imported; fi; exec n8n start"]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:5678/healthz >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 15s
 
 volumes:
   postgres_data:
