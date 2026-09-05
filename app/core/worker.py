@@ -28,7 +28,9 @@ class ExecutionWorker:
             if execution is None:
                 await self.queue.dead_letter(job, "execution_not_found")
             elif execution.status is ExecutionStatus.failed:
-                await self.queue.dead_letter(job, execution.error or "execution_failed")
+                await self.queue.dead_letter(
+                    job, execution.error or "execution_failed"
+                )
             else:
                 await self.queue.ack(job)
         except Exception:
