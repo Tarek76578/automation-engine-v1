@@ -1,0 +1,15 @@
+import pytest
+
+from app.core.job_queue import InMemoryQueue, Job
+
+
+@pytest.mark.asyncio
+async def test_in_memory_queue_round_trip() -> None:
+    from uuid import uuid4
+
+    queue = InMemoryQueue()
+    execution_id = uuid4()
+    await queue.enqueue(Job(execution_id=execution_id))
+    job = await queue.dequeue()
+    queue.task_done()
+    assert job.execution_id == execution_id
