@@ -3,6 +3,7 @@ from uuid import UUID
 
 from sqlalchemy import JSON, DateTime, String, select, text
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -71,8 +72,22 @@ class PostgresExecutionRepository:
                 created_at=execution.created_at,
                 updated_at=execution.updated_at,
             )
-            await session.merge(row)
-            await session.commit()
+            try:
+                await session.merge(row)
+                await session.commit()
+            except IntegrityError:
+                await session.rollback()
+                if not execution.idempotency_key:
+                    raise
+                result = await session.execute(
+                    select(ExecutionRow).where(
+                        ExecutionRow.idempotency_key == execution.idempotency_key
+                    )
+                )
+                existing = result.scalar_one_or_none()
+                if existing is None:
+                    raise
+                return self._to_execution(existing)
         return execution
 
     async def get(self, execution_id: str) -> Execution | None:
