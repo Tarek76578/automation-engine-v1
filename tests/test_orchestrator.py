@@ -52,6 +52,33 @@ async def test_execution_flows_through_queue_worker_and_agent() -> None:
 
 
 @pytest.mark.asyncio
+async def test_submit_does_not_enqueue_loser_of_idempotency_race() -> None:
+    class RaceRepository(InMemoryExecutionRepository):
+        def __init__(self, existing: Execution) -> None:
+            super().__init__()
+            self.existing = existing
+
+        async def get_by_idempotency_key(self, key: str) -> Execution | None:
+            return None
+
+        async def save(self, execution: Execution) -> Execution:
+            return self.existing
+
+    existing = Execution(workflow="support", idempotency_key="request-race")
+    repository = RaceRepository(existing)
+    queue = InMemoryQueue()
+    runtime = AgentRuntime(AgentRegistry(), LLMRouter())
+    orchestrator = ExecutionOrchestrator(repository, queue, runtime)
+
+    submitted = await orchestrator.submit(
+        Execution(workflow="support"), idempotency_key="request-race"
+    )
+
+    assert submitted.id == existing.id
+    assert queue._queue.qsize() == 0
+
+
+@pytest.mark.asyncio
 async def test_execution_uses_default_agent_for_unknown_workflow() -> None:
     registry = AgentRegistry()
 
