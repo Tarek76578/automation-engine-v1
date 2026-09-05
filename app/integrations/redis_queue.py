@@ -20,12 +20,15 @@ return #items
 
 _RECLAIM_LUA = """
 local items = redis.call('ZRANGEBYSCORE', KEYS[1], '-inf', ARGV[1], 'LIMIT', 0, ARGV[2])
+local reclaimed = 0
 for _, raw in ipairs(items) do
   if redis.call('ZREM', KEYS[1], raw) == 1 then
-    redis.call('RPUSH', KEYS[2], raw)
+    redis.call('LREM', KEYS[2], 1, raw)
+    redis.call('RPUSH', KEYS[3], raw)
+    reclaimed = reclaimed + 1
   end
 end
-return #items
+return reclaimed
 """
 
 
@@ -75,10 +78,7 @@ class RedisQueue(Queue):
         payload = self._encode(self._without_claim(job))
         if delay_seconds > 0:
             now = float((await self.redis.time())[0])
-            await self.redis.zadd(
-                self.delayed_key,
-                {payload: now + delay_seconds},
-            )
+            await self.redis.zadd(self.delayed_key, {payload: now + delay_seconds})
             return
         await self.redis.rpush(self.key, payload)
 
@@ -154,8 +154,9 @@ class RedisQueue(Queue):
         return int(
             await self.redis.eval(
                 _RECLAIM_LUA,
-                2,
+                3,
                 self.claims_key,
+                self.processing_key,
                 self.key,
                 now,
                 self.reclaim_batch_size,
