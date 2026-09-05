@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import JSON, DateTime, String, select
+from sqlalchemy import JSON, DateTime, String, select, text
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -41,6 +41,19 @@ class PostgresExecutionRepository:
             return
         async with self.engine.begin() as connection:
             await connection.run_sync(Base.metadata.create_all)
+            await connection.execute(
+                text(
+                    "ALTER TABLE executions "
+                    "ADD COLUMN IF NOT EXISTS idempotency_key VARCHAR(200)"
+                )
+            )
+            await connection.execute(
+                text(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS "
+                    "ix_executions_idempotency_key "
+                    "ON executions (idempotency_key)"
+                )
+            )
         self._schema_ready = True
 
     async def save(self, execution: Execution) -> Execution:
