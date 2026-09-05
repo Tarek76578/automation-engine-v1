@@ -2,16 +2,14 @@ from __future__ import annotations
 
 import logging
 
-from app.core.job_queue import InMemoryQueue, Job
+from app.core.job_queue import Job, Queue
 from app.core.orchestrator import ExecutionOrchestrator
 
 logger = logging.getLogger(__name__)
 
 
 class ExecutionWorker:
-    def __init__(
-        self, queue: InMemoryQueue, orchestrator: ExecutionOrchestrator
-    ) -> None:
+    def __init__(self, queue: Queue, orchestrator: ExecutionOrchestrator) -> None:
         self.queue = queue
         self.orchestrator = orchestrator
 
@@ -25,4 +23,6 @@ class ExecutionWorker:
                 extra={"execution_id": str(job.execution_id)},
             )
         finally:
-            self.queue.task_done()
+            task_done = getattr(self.queue, "task_done", None)
+            if task_done is not None:
+                task_done()
