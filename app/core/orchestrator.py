@@ -31,18 +31,15 @@ class ExecutionOrchestrator:
         self.runtime = runtime
         self.n8n = n8n
         self.max_attempts = max(1, max_attempts)
-        self._idempotency: dict[str, str] = {}
 
     async def submit(
         self, execution: Execution, idempotency_key: str | None = None
     ) -> Execution:
         if idempotency_key:
-            existing_id = self._idempotency.get(idempotency_key)
-            if existing_id:
-                existing = await self.repository.get(existing_id)
-                if existing is not None:
-                    return existing
-            self._idempotency[idempotency_key] = str(execution.id)
+            existing = await self.repository.get_by_idempotency_key(idempotency_key)
+            if existing is not None:
+                return existing
+            execution.idempotency_key = idempotency_key
         existing = await self.repository.get(str(execution.id))
         if existing is not None:
             return existing
@@ -84,10 +81,7 @@ class ExecutionOrchestrator:
                     )
                 output["n8n"] = await self.n8n.trigger_webhook(
                     str(webhook),
-                    {
-                        "execution_id": str(execution.id),
-                        "output": output,
-                    },
+                    {"execution_id": str(execution.id), "output": output},
                 )
             transition(execution, ExecutionStatus.succeeded)
             execution.output = output
