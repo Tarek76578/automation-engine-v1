@@ -39,6 +39,7 @@ async def test_execution_flows_through_queue_worker_and_agent() -> None:
     )
 
     assert duplicate.id == execution.id
+    assert execution.idempotency_key == "request-1"
     assert execution.status is ExecutionStatus.queued
 
     await ExecutionWorker(queue, orchestrator).run_once()
@@ -48,6 +49,35 @@ async def test_execution_flows_through_queue_worker_and_agent() -> None:
     assert result.status is ExecutionStatus.succeeded
     assert result.output is not None
     assert result.output["answer"] == "hello"
+
+
+@pytest.mark.asyncio
+async def test_execution_uses_default_agent_for_unknown_workflow() -> None:
+    registry = AgentRegistry()
+
+    async def handler(task, definition):
+        return {"answer": task.input["prompt"]}
+
+    registry.register(AgentDefinition(name="automation"), handler)
+    runtime = AgentRuntime(registry, LLMRouter())
+    repository = InMemoryExecutionRepository()
+    queue = InMemoryQueue()
+    orchestrator = ExecutionOrchestrator(repository, queue, runtime)
+
+    execution = await orchestrator.submit(
+        Execution(
+            workflow="lead-enrichment",
+            input={"input": {"prompt": "enrich this lead"}},
+        )
+    )
+
+    await ExecutionWorker(queue, orchestrator).run_once()
+    result = await repository.get(str(execution.id))
+
+    assert result is not None
+    assert result.status is ExecutionStatus.succeeded
+    assert result.output is not None
+    assert result.output["agent"] == "automation"
 
 
 @pytest.mark.asyncio
