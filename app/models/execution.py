@@ -1,11 +1,11 @@
-from datetime import datetime, timezone
-from enum import Enum
+from datetime import UTC, datetime
+from enum import StrEnum
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field
 
 
-class ExecutionStatus(str, Enum):
+class ExecutionStatus(StrEnum):
     queued = "queued"
     running = "running"
     succeeded = "succeeded"
@@ -27,5 +27,5 @@ class Execution(BaseModel):
     output: dict | None = None
     error: str | None = None
     attempts: int = 0
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
