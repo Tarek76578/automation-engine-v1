@@ -4,6 +4,8 @@ import asyncio
 from dataclasses import dataclass
 from uuid import UUID
 
+from app.core.config import settings
+
 
 @dataclass(frozen=True)
 class Job:
@@ -32,4 +34,11 @@ class InMemoryQueue(Queue):
         self._queue.task_done()
 
 
-queue = InMemoryQueue()
+if settings.redis_url:
+    from redis.asyncio import Redis
+
+    from app.integrations.redis_queue import RedisQueue
+
+    queue: Queue = RedisQueue(Redis.from_url(settings.redis_url))
+else:
+    queue = InMemoryQueue()
