@@ -1,6 +1,6 @@
+from fastapi import APIRouter
 from prometheus_client import Counter, generate_latest
 from starlette.responses import Response
-from fastapi import APIRouter
 
 router = APIRouter(tags=["observability"])
 
