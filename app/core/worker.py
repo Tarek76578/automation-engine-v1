@@ -4,6 +4,7 @@ import logging
 
 from app.core.job_queue import Job, Queue
 from app.core.orchestrator import ExecutionOrchestrator
+from app.models.execution import ExecutionStatus
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +25,11 @@ class ExecutionWorker:
         job: Job = await self.queue.dequeue()
         try:
             execution = await self.orchestrator.process(str(job.execution_id))
-            if execution is not None:
+            if execution is None:
+                await self.queue.dead_letter(job, "execution_not_found")
+            elif execution.status is ExecutionStatus.failed:
+                await self.queue.dead_letter(job, execution.error or "execution_failed")
+            else:
                 await self.queue.ack(job)
         except Exception:
             logger.exception(
