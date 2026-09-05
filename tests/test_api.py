@@ -1,8 +1,7 @@
-from fastapi.testclient import TestClient
-
 from app.core.agent_runtime import registry
 from app.main import app
 from app.models.agent import AgentDefinition
+from fastapi.testclient import TestClient
 
 client = TestClient(app)
 
