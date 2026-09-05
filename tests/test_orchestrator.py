@@ -1,5 +1,3 @@
-import pytest
-
 from app.core.agent_runtime import AgentRegistry, AgentRuntime
 from app.core.job_queue import InMemoryQueue
 from app.core.orchestrator import ExecutionOrchestrator
@@ -8,6 +6,7 @@ from app.core.router import LLMRouter
 from app.core.worker import ExecutionWorker
 from app.models.agent import AgentDefinition
 from app.models.execution import Execution, ExecutionStatus
+import pytest
 
 
 @pytest.mark.asyncio
