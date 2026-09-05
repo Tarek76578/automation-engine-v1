@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from app.providers.base import LLMRequest, LLMResponse, ProviderNotConfigured
-
 import httpx
+
+from app.providers.base import LLMRequest, LLMResponse, ProviderNotConfigured
 
 
 class OpenAIProvider:
