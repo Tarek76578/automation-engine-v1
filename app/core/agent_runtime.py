@@ -9,7 +9,9 @@ from app.models.agent import AgentDefinition, AgentResult, AgentTask
 from app.providers.base import LLMProvider, LLMRequest
 from app.providers.openai import OpenAIProvider
 
-AgentHandler = Callable[[AgentTask, AgentDefinition], dict[str, Any] | Awaitable[dict[str, Any]]]
+AgentHandler = Callable[
+    [AgentTask, AgentDefinition], dict[str, Any] | Awaitable[dict[str, Any]]
+]
 
 
 class AgentRegistry:
@@ -17,7 +19,9 @@ class AgentRegistry:
         self._agents: dict[str, AgentDefinition] = {}
         self._handlers: dict[str, AgentHandler] = {}
 
-    def register(self, definition: AgentDefinition, handler: AgentHandler | None = None) -> None:
+    def register(
+        self, definition: AgentDefinition, handler: AgentHandler | None = None
+    ) -> None:
         self._agents[definition.name] = definition
         if handler:
             self._handlers[definition.name] = handler
@@ -30,7 +34,12 @@ class AgentRegistry:
 
 
 class AgentRuntime:
-    def __init__(self, registry: AgentRegistry, router: LLMRouter, providers: dict[str, LLMProvider] | None = None) -> None:
+    def __init__(
+        self,
+        registry: AgentRegistry,
+        router: LLMRouter,
+        providers: dict[str, LLMProvider] | None = None,
+    ) -> None:
         self.registry = registry
         self.router = router
         self.providers = providers or {}
@@ -48,12 +57,27 @@ class AgentRuntime:
         else:
             provider = self.providers.get(route.provider)
             if provider is None:
-                output: dict[str, Any] = {"status": "accepted", "agent": task.agent, "input": task.input}
+                output: dict[str, Any] = {
+                    "status": "accepted",
+                    "agent": task.agent,
+                    "input": task.input,
+                }
             else:
                 prompt = str(task.input.get("prompt", task.input))
-                response = await provider.generate(LLMRequest(model=route.model, prompt=prompt, system=definition.system_prompt or None))
+                response = await provider.generate(
+                    LLMRequest(
+                        model=route.model,
+                        prompt=prompt,
+                        system=definition.system_prompt or None,
+                    )
+                )
                 output = {"text": response.text, "usage": response.usage or {}}
-        return AgentResult(task_id=task.id, output=output, provider=definition.provider or route.provider, model=definition.model or route.model)
+        return AgentResult(
+            task_id=task.id,
+            output=output,
+            provider=definition.provider or route.provider,
+            model=definition.model or route.model,
+        )
 
     def execute(self, task: AgentTask) -> AgentResult:
         raise RuntimeError("AgentRuntime.execute is synchronous; use execute_async")
