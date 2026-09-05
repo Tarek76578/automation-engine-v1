@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     anthropic_api_key: str = ""
     google_api_key: str = ""
+    default_agent: str = "automation"
 
     model_config = SettingsConfigDict(
         env_file=".env",
