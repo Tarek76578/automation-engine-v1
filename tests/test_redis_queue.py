@@ -5,13 +5,14 @@ import os
 from uuid import uuid4
 
 import pytest
+import pytest_asyncio
 from redis.asyncio import Redis
 
 from app.core.job_queue import Job
 from app.integrations.redis_queue import RedisQueue
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def redis_queue() -> RedisQueue:
     url = os.getenv("REDIS_URL", "")
     if not url:
@@ -48,7 +49,6 @@ async def test_redis_queue_ack_uses_claim_token(redis_queue: RedisQueue) -> None
     assert first.claim_token != second.claim_token
 
     await redis_queue.ack(first)
-    await redis_queue.redis.lrange(redis_queue.processing_key, 0, -1)
     assert await redis_queue.redis.llen(redis_queue.processing_key) == 1
 
     await redis_queue.ack(second)
