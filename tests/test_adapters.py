@@ -9,7 +9,8 @@ async def test_in_memory_queue_round_trip() -> None:
 
     queue = InMemoryQueue()
     execution_id = uuid4()
-    await queue.enqueue(Job(execution_id=execution_id))
-    job = await queue.dequeue()
-    queue.task_done()
-    assert job.execution_id == execution_id
+    job = Job(execution_id=execution_id)
+    await queue.enqueue(job)
+    received = await queue.dequeue()
+    await queue.ack(received)
+    assert received.execution_id == execution_id
