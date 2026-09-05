@@ -1,8 +1,8 @@
 from uuid import uuid4
 
-from app.core.job_queue import InMemoryQueue, Job
-
 import pytest
+
+from app.core.job_queue import InMemoryQueue, Job
 
 
 @pytest.mark.asyncio
