@@ -24,7 +24,7 @@ _meta_orchestrator = ExecutionOrchestrator(execution_repository, queue, agent_ru
 @router.get("/oauth/start")
 async def meta_oauth_start() -> dict[str, str]:
     try:
-        url, _ = meta_oauth_manager.authorization_url()
+        url, _ = await meta_oauth_manager.authorization_url()
     except MetaOAuthError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     return {"authorization_url": url}
