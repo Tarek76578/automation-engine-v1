@@ -44,14 +44,27 @@ end
 return removed
 """
 
+_DEAD_LETTER_SCRIPT = """
+local claim = redis.call('HGET', KEYS[2], ARGV[1])
+if claim ~= ARGV[3] then
+    return 0
+end
+local removed = redis.call('LREM', KEYS[1], 1, ARGV[2])
+if removed == 1 then
+    redis.call('HDEL', KEYS[2], ARGV[1])
+    redis.call('RPUSH', KEYS[3], ARGV[4])
+end
+return removed
+"""
+
 
 class RedisQueue(Queue):
     """Redis-backed at-least-once queue with crash-safe visibility recovery.
 
     Jobs are atomically moved from the ready list to the processing list with
     BLMOVE. A separate claim record carries the visibility deadline and token.
-    ACK and recovery use Lua scripts so an ACK cannot race with recovery and
-    accidentally resurrect an already-completed job.
+    ACK, recovery, and dead-letter transitions use Lua scripts so stale worker
+    claims cannot race a newer claim and mutate queue state incorrectly.
     """
 
     def __init__(
@@ -166,11 +179,17 @@ class RedisQueue(Queue):
             return
         if claim_data.get("token") != job.claim_token:
             return
-        async with self.redis.pipeline(transaction=True) as pipe:
-            pipe.lrem(self.processing_key, 1, payload)
-            pipe.hdel(self.claims_key, str(job.job_id))
-            pipe.rpush(self.dead_letter_key, record)
-            await pipe.execute()
+        await self.redis.eval(
+            _DEAD_LETTER_SCRIPT,
+            3,
+            self.processing_key,
+            self.claims_key,
+            self.dead_letter_key,
+            str(job.job_id),
+            payload,
+            claim,
+            record,
+        )
 
     async def recover(self) -> int:
         now = float((await self.redis.time())[0])
