@@ -72,19 +72,12 @@ class MetaOAuthManager:
             "response_type": "code",
         }
 
-        # Facebook Login for Business uses a Meta-managed configuration.
-        # The config_id defines the requested business permissions and replaces
-        # the legacy scope-based authorization flow when configured.
         config_id = settings.meta_oauth_config_id.strip()
         if config_id:
             params["config_id"] = config_id
             params["override_default_response_type"] = "true"
         else:
-            configured_scopes = [
-                scope.strip()
-                for scope in settings.meta_oauth_scopes.split(",")
-                if scope.strip()
-            ]
+            configured_scopes = [scope.strip() for scope in settings.meta_oauth_scopes.split(",") if scope.strip()]
             scopes = list(dict.fromkeys([*configured_scopes, *self.REQUIRED_SCOPES]))
             params["scope"] = ",".join(scopes)
 
@@ -106,11 +99,7 @@ class MetaOAuthManager:
         page_name = str(page.get("name", "")).strip()
         if not page_id or not page_token:
             raise MetaOAuthError("Meta did not return a usable Page access token")
-        credentials = {
-            "page_id": page_id,
-            "page_name": page_name,
-            "page_access_token": page_token,
-        }
+        credentials = {"page_id": page_id, "page_name": page_name, "page_access_token": page_token}
         try:
             await self._store.save(page_id, page_name, page_token)
         except MetaCredentialError as exc:
@@ -148,11 +137,7 @@ class MetaOAuthManager:
         return token
 
     async def _list_pages(self, user_token: str) -> list[dict[str, Any]]:
-        result = await self._request(
-            "GET",
-            "/me/accounts",
-            {"access_token": user_token, "fields": "id,name,access_token"},
-        )
+        result = await self._request("GET", "/me/accounts", {"access_token": user_token, "fields": "id,name,access_token"})
         data = result.get("data", [])
         if not isinstance(data, list):
             raise MetaOAuthError("Meta returned an invalid Page list")
