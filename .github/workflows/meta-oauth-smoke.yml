@@ -8,7 +8,7 @@ jobs:
   meta-oauth-smoke:
     runs-on: ubuntu-latest
     steps:
-      - name: Verify live Meta OAuth start and callback endpoints
+      - name: Verify live Meta OAuth start, callback, and Graph API endpoints
         shell: bash
         run: |
           set -euo pipefail
@@ -107,7 +107,35 @@ jobs:
               exit 1
             fi
 
-            echo "Live Meta OAuth smoke passed: signed state generated, cache disabled, states are unique, and tampered callback state is rejected."
+            status_body=$(mktemp)
+            status_code=$(curl -sS -o "$status_body" -w '%{http_code}' "$base/api/meta/oauth/status" || true)
+            echo "OAuth status HTTP status: $status_code"
+            if [[ "$status_code" != "200" ]]; then
+              echo "OAuth status endpoint failed"
+              cat "$status_body"
+              exit 1
+            fi
+            if ! jq -e '.connected == true and .page_id != null and .page_name != null' "$status_body" >/dev/null; then
+              echo "Connected Meta page was not found in persistent OAuth status"
+              cat "$status_body"
+              exit 1
+            fi
+
+            page_body=$(mktemp)
+            page_code=$(curl -sS -o "$page_body" -w '%{http_code}' "$base/api/meta/page" || true)
+            echo "Meta Graph page info HTTP status: $page_code"
+            if [[ "$page_code" != "200" ]]; then
+              echo "Meta Graph API page info check failed"
+              cat "$page_body"
+              exit 1
+            fi
+            if ! jq -e '.id != null and .name != null' "$page_body" >/dev/null; then
+              echo "Meta Graph API returned an unexpected page payload"
+              cat "$page_body"
+              exit 1
+            fi
+
+            echo "Live Meta smoke passed: OAuth state protections, persistent connection, and Meta Graph API page access are all working."
             exit 0
           done
 
