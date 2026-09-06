@@ -64,15 +64,30 @@ class MetaOAuthManager:
         self._require_ready()
         state = secrets.token_urlsafe(32)
         self._states[self._digest(state)] = OAuthState(state, time.time() + 600)
-        configured_scopes = [scope.strip() for scope in settings.meta_oauth_scopes.split(",") if scope.strip()]
-        scopes = list(dict.fromkeys([*configured_scopes, *self.REQUIRED_SCOPES]))
+
         params = {
             "client_id": settings.meta_app_id,
             "redirect_uri": settings.meta_redirect_uri,
             "state": state,
             "response_type": "code",
-            "scope": ",".join(scopes),
         }
+
+        # Facebook Login for Business uses a Meta-managed configuration.
+        # The config_id defines the requested business permissions and replaces
+        # the legacy scope-based authorization flow when configured.
+        config_id = settings.meta_oauth_config_id.strip()
+        if config_id:
+            params["config_id"] = config_id
+            params["override_default_response_type"] = "true"
+        else:
+            configured_scopes = [
+                scope.strip()
+                for scope in settings.meta_oauth_scopes.split(",")
+                if scope.strip()
+            ]
+            scopes = list(dict.fromkeys([*configured_scopes, *self.REQUIRED_SCOPES]))
+            params["scope"] = ",".join(scopes)
+
         return (
             f"https://www.facebook.com/{settings.meta_graph_api_version}/dialog/oauth?{urlencode(params)}",
             state,
