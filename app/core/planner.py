@@ -36,38 +36,12 @@ class AgentPlanner:
         }
     )
     SENSITIVE_MARKERS = (
-        "publish",
-        "delete",
-        "send money",
-        "payment",
-        "charge",
-        "spend",
-        "post",
-        "facebook post",
-        "meta post",
-        "reply",
-        "messenger",
-        "facebook message",
-        "شراء",
-        "دفع",
-        "حذف",
-        "نشر",
-        "منشور",
-        "رد",
-        "رسالة فيسبوك",
-        "ماسنجر",
+        "publish", "delete", "send money", "payment", "charge", "spend", "post",
+        "facebook post", "meta post", "reply", "messenger", "facebook message",
+        "شراء", "دفع", "حذف", "نشر", "منشور", "رد", "رسالة فيسبوك", "ماسنجر",
     )
     SENSITIVE_ACTIONS = frozenset(
-        {
-            "publish",
-            "delete",
-            "payment",
-            "charge",
-            "send_money",
-            "spend",
-            "meta_page_post",
-            "meta_page_reply",
-        }
+        {"publish", "delete", "payment", "charge", "send_money", "spend", "meta_page_post", "meta_page_reply"}
     )
 
     def __init__(self, provider: Any | None = None, model: str = "agent-planner") -> None:
@@ -98,6 +72,8 @@ class AgentPlanner:
         prompt = (
             "Return JSON only with keys goal, steps, requires_approval, approval_reason. "
             "Each step must contain action, reason, parameters. "
+            "For an inbound Messenger customer message, create one meta_page_reply step "
+            "using the same recipient_id and write a concise helpful reply in the user's language. "
             f"Task: {json.dumps(task_input, ensure_ascii=False)}"
         )
         return LLMRequest(model=self.model, prompt=prompt, system=system_prompt or None)
@@ -127,6 +103,8 @@ class AgentPlanner:
         return plan
 
     def _is_sensitive(self, task_input: dict[str, Any], plan: AgentPlan) -> bool:
+        if task_input.get("meta_messenger_inbound") and task_input.get("meta_messenger_auto_reply"):
+            return any(step.action in self.SENSITIVE_ACTIONS - {"meta_page_reply"} for step in plan.steps)
         text = json.dumps(task_input, ensure_ascii=False).lower()
         if any(marker in text for marker in self.SENSITIVE_MARKERS):
             return True
@@ -142,9 +120,12 @@ class AgentPlanner:
                 parameters["link"] = task_input["link"]
         elif task_input.get("meta_page_reply"):
             action = "meta_page_reply"
+            parameters = {"recipient_id": str(task_input.get("recipient_id", "")), "message": str(task_input["meta_page_reply"])}
+        elif task_input.get("meta_messenger_inbound"):
+            action = "meta_page_reply"
             parameters = {
                 "recipient_id": str(task_input.get("recipient_id", "")),
-                "message": str(task_input["meta_page_reply"]),
+                "message": "شكرًا لتواصلك معنا. تلقينا رسالتك وسنساعدك قريبًا.",
             }
         elif task_input.get("meta_page_messages"):
             action = "meta_page_messages"
@@ -154,10 +135,7 @@ class AgentPlanner:
             parameters = {}
         elif task_input.get("webhook_url"):
             action = "webhook"
-            parameters = {
-                "webhook_url": task_input["webhook_url"],
-                "webhook_payload": task_input.get("webhook_payload", task_input),
-            }
+            parameters = {"webhook_url": task_input["webhook_url"], "webhook_payload": task_input.get("webhook_payload", task_input)}
         elif any(word in lower for word in ("send", "أرسل", "رسالة", "message")):
             action = "prepare_message"
             parameters = {"message": text}
@@ -167,16 +145,10 @@ class AgentPlanner:
         else:
             action = "process_request"
             parameters = {"request": text}
-        sensitive = self._is_sensitive(
-            task_input, AgentPlan(goal=text or "Process automation request", steps=[PlanStep(action=action)])
-        )
+        sensitive = self._is_sensitive(task_input, AgentPlan(goal=text or "Process automation request", steps=[PlanStep(action=action)]))
         return AgentPlan(
             goal=text or "Process automation request",
             steps=[PlanStep(action=action, reason="Deterministic fallback plan", parameters=parameters)],
             requires_approval=sensitive,
-            approval_reason=(
-                "The request appears to involve a sensitive or externally consequential operation."
-                if sensitive
-                else ""
-            ),
+            approval_reason=("The request appears to involve a sensitive or externally consequential operation." if sensitive else ""),
         )
