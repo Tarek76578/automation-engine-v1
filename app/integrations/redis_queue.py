@@ -8,7 +8,52 @@ from redis.asyncio import Redis
 from app.core.job_queue import Job, Queue
 
 
+_ACK_SCRIPT = """
+local claim = redis.call('HGET', KEYS[2], ARGV[1])
+if claim ~= ARGV[3] then
+    return 0
+end
+local removed = redis.call('LREM', KEYS[1], 1, ARGV[2])
+if removed == 1 then
+    redis.call('HDEL', KEYS[2], ARGV[1])
+end
+return removed
+"""
+
+_RECOVER_WITH_CLAIM_SCRIPT = """
+local claim = redis.call('HGET', KEYS[2], ARGV[1])
+if claim ~= ARGV[3] then
+    return 0
+end
+local removed = redis.call('LREM', KEYS[1], 1, ARGV[2])
+if removed == 1 then
+    redis.call('HDEL', KEYS[2], ARGV[1])
+    redis.call('RPUSH', KEYS[3], ARGV[2])
+end
+return removed
+"""
+
+_RECOVER_WITHOUT_CLAIM_SCRIPT = """
+if redis.call('HEXISTS', KEYS[2], ARGV[1]) == 1 then
+    return 0
+end
+local removed = redis.call('LREM', KEYS[1], 1, ARGV[2])
+if removed == 1 then
+    redis.call('RPUSH', KEYS[3], ARGV[2])
+end
+return removed
+"""
+
+
 class RedisQueue(Queue):
+    """Redis-backed at-least-once queue with crash-safe visibility recovery.
+
+    Jobs are atomically moved from the ready list to the processing list with
+    BLMOVE. A separate claim record carries the visibility deadline and token.
+    ACK and recovery use Lua scripts so an ACK cannot race with recovery and
+    accidentally resurrect an already-completed job.
+    """
+
     def __init__(
         self,
         redis: Redis,
@@ -30,8 +75,6 @@ class RedisQueue(Queue):
     @staticmethod
     def _encode(job: Job) -> str:
         payload = {"execution_id": str(job.execution_id), "job_id": str(job.job_id)}
-        if job.claim_token is not None:
-            payload["claim_token"] = job.claim_token
         return json.dumps(payload, separators=(",", ":"))
 
     @staticmethod
@@ -45,12 +88,8 @@ class RedisQueue(Queue):
             claim_token=payload.get("claim_token"),
         )
 
-    @staticmethod
-    def _without_claim(job: Job) -> Job:
-        return Job(execution_id=job.execution_id, job_id=job.job_id)
-
     async def enqueue(self, job: Job, delay_seconds: float = 0.0) -> None:
-        payload = self._encode(self._without_claim(job))
+        payload = self._encode(job)
         if delay_seconds > 0:
             now = float((await self.redis.time())[0])
             await self.redis.zadd(self.delayed_key, {payload: now + delay_seconds})
@@ -73,40 +112,60 @@ class RedisQueue(Queue):
     async def dequeue(self) -> Job:
         while True:
             await self._promote_due()
-            raw = await self.redis.brpoplpush(self.key, self.processing_key, timeout=1)
+            raw = await self.redis.blmove(
+                self.key, self.processing_key, timeout=1, src="RIGHT", dest="LEFT"
+            )
             if raw is None:
                 continue
 
             job = self._decode(raw)
             claim_token = uuid4().hex
-            claimed = Job(job.execution_id, job.job_id, claim_token)
-            payload = self._encode(claimed)
             deadline = float((await self.redis.time())[0]) + self.visibility_timeout_seconds
-
-            async with self.redis.pipeline(transaction=True) as pipe:
-                pipe.lrem(self.processing_key, 1, raw)
-                pipe.rpush(self.processing_key, payload)
-                pipe.hset(self.claims_key, str(job.job_id), deadline)
-                await pipe.execute()
-            return claimed
+            claim = json.dumps(
+                {"token": claim_token, "deadline": deadline}, separators=(",", ":")
+            )
+            await self.redis.hset(self.claims_key, str(job.job_id), claim)
+            return Job(job.execution_id, job.job_id, claim_token)
 
     async def ack(self, job: Job) -> None:
         if job.claim_token is None:
             return
         payload = self._encode(job)
-        async with self.redis.pipeline(transaction=True) as pipe:
-            pipe.lrem(self.processing_key, 1, payload)
-            pipe.hdel(self.claims_key, str(job.job_id))
-            await pipe.execute()
+        claim = await self.redis.hget(self.claims_key, str(job.job_id))
+        if claim is None:
+            return
+        try:
+            claim_data = json.loads(claim)
+        except (TypeError, ValueError):
+            return
+        if claim_data.get("token") != job.claim_token:
+            return
+        await self.redis.eval(
+            _ACK_SCRIPT,
+            2,
+            self.processing_key,
+            self.claims_key,
+            str(job.job_id),
+            payload,
+            claim,
+        )
 
     async def dead_letter(self, job: Job, reason: str) -> None:
         if job.claim_token is None:
             return
-        record = json.dumps(
-            {"job": json.loads(self._encode(self._without_claim(job))), "reason": reason},
-            separators=(",", ":"),
-        )
         payload = self._encode(job)
+        record = json.dumps(
+            {"job": json.loads(payload), "reason": reason}, separators=(",", ":")
+        )
+        claim = await self.redis.hget(self.claims_key, str(job.job_id))
+        if claim is None:
+            return
+        try:
+            claim_data = json.loads(claim)
+        except (TypeError, ValueError):
+            return
+        if claim_data.get("token") != job.claim_token:
+            return
         async with self.redis.pipeline(transaction=True) as pipe:
             pipe.lrem(self.processing_key, 1, payload)
             pipe.hdel(self.claims_key, str(job.job_id))
@@ -116,15 +175,39 @@ class RedisQueue(Queue):
     async def recover(self) -> int:
         now = float((await self.redis.time())[0])
         recovered = 0
-        processing = await self.redis.lrange(self.processing_key, 0, -1)
-        for raw in processing[: self.reclaim_batch_size]:
+        processing = await self.redis.lrange(self.processing_key, 0, self.reclaim_batch_size - 1)
+        for raw in processing:
             job = self._decode(raw)
-            deadline = await self.redis.hget(self.claims_key, str(job.job_id))
-            if deadline is None or float(deadline) <= now:
-                async with self.redis.pipeline(transaction=True) as pipe:
-                    pipe.lrem(self.processing_key, 1, raw)
-                    pipe.hdel(self.claims_key, str(job.job_id))
-                    pipe.rpush(self.key, self._encode(self._without_claim(job)))
-                    await pipe.execute()
-                recovered += 1
+            claim = await self.redis.hget(self.claims_key, str(job.job_id))
+            if claim is None:
+                recovered += int(
+                    await self.redis.eval(
+                        _RECOVER_WITHOUT_CLAIM_SCRIPT,
+                        3,
+                        self.processing_key,
+                        self.claims_key,
+                        self.key,
+                        str(job.job_id),
+                        raw,
+                    )
+                )
+                continue
+            try:
+                claim_data = json.loads(claim)
+                deadline = float(claim_data["deadline"])
+            except (TypeError, ValueError, KeyError):
+                deadline = 0.0
+            if deadline <= now:
+                recovered += int(
+                    await self.redis.eval(
+                        _RECOVER_WITH_CLAIM_SCRIPT,
+                        3,
+                        self.processing_key,
+                        self.claims_key,
+                        self.key,
+                        str(job.job_id),
+                        raw,
+                        claim,
+                    )
+                )
         return recovered
