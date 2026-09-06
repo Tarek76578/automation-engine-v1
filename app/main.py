@@ -12,6 +12,8 @@ from app.api.meta import router as meta_router
 from app.api.metrics import router as metrics_router
 from app.core.config import settings
 from app.core.observability import configure_logging, new_request_id, request_id_var
+from app.integrations.meta import meta_graph_client
+from app.integrations.meta_oauth import meta_oauth_manager
 from app.models.execution import Execution
 
 configure_logging(settings.log_level)
@@ -21,6 +23,14 @@ app.include_router(executions_router, prefix="/api")
 app.include_router(agents_router, prefix="/api")
 app.include_router(meta_router, prefix="/api")
 app.include_router(metrics_router, prefix="/api")
+
+
+@app.on_event("startup")
+async def initialize_meta_credentials() -> None:
+    await meta_oauth_manager.initialize()
+    credentials = meta_oauth_manager.credentials()
+    if credentials:
+        meta_graph_client.configure(credentials["page_id"], credentials["page_access_token"])
 
 
 @app.middleware("http")

@@ -10,6 +10,11 @@ from typing import Any
 import httpx
 
 from app.core.config import settings
+from app.integrations.meta_credentials import (
+    CredentialStore,
+    MetaCredentialError,
+    build_meta_credential_store,
+)
 
 
 class MetaOAuthError(RuntimeError):
@@ -23,23 +28,33 @@ class OAuthState:
 
 
 class MetaOAuthManager:
-    """Minimal OAuth onboarding flow with one-time, expiring CSRF state.
+    """OAuth onboarding with one-time state and durable encrypted Page credentials."""
 
-    Access tokens are kept in process memory for this phase. Production deployments
-    should replace the token store with encrypted persistent secret storage.
-    """
-
-    def __init__(self) -> None:
+    def __init__(self, credential_store: CredentialStore | None = None) -> None:
         self._states: dict[str, OAuthState] = {}
         self._credentials: dict[str, dict[str, str]] = {}
+        self._store = credential_store or build_meta_credential_store()
+        self._storage_error: str | None = None
 
     @property
     def configured(self) -> bool:
         return bool(settings.meta_app_id and settings.meta_app_secret and settings.meta_redirect_uri)
 
+    @property
+    def storage_configured(self) -> bool:
+        return self._storage_error is None
+
+    async def initialize(self) -> None:
+        try:
+            await self._store.initialize()
+            credentials = await self._store.load()
+            if credentials:
+                self._credentials["default"] = credentials
+        except MetaCredentialError as exc:
+            self._storage_error = str(exc)
+
     def authorization_url(self) -> tuple[str, str]:
-        if not self.configured:
-            raise MetaOAuthError("META_APP_ID, META_APP_SECRET and META_REDIRECT_URI are required")
+        self._require_ready()
         state = secrets.token_urlsafe(32)
         self._states[self._digest(state)] = OAuthState(state, time.time() + 600)
         params = {
@@ -55,6 +70,7 @@ class MetaOAuthManager:
         )
 
     async def callback(self, code: str, state: str) -> dict[str, Any]:
+        self._require_ready()
         self._consume_state(state)
         if not code.strip():
             raise MetaOAuthError("Meta OAuth callback is missing code")
@@ -63,14 +79,30 @@ class MetaOAuthManager:
         page = self._select_page(pages)
         page_id = str(page.get("id", "")).strip()
         page_token = str(page.get("access_token", "")).strip()
+        page_name = str(page.get("name", "")).strip()
         if not page_id or not page_token:
             raise MetaOAuthError("Meta did not return a usable Page access token")
-        self._credentials["default"] = {"page_id": page_id, "page_access_token": page_token}
-        return {"page_id": page_id, "page_name": page.get("name", ""), "connected": True}
+        credentials = {
+            "page_id": page_id,
+            "page_name": page_name,
+            "page_access_token": page_token,
+        }
+        try:
+            await self._store.save(page_id, page_name, page_token)
+        except MetaCredentialError as exc:
+            raise MetaOAuthError(str(exc)) from exc
+        self._credentials["default"] = credentials
+        return {"page_id": page_id, "page_name": page_name, "connected": True}
 
     def credentials(self) -> dict[str, str] | None:
         value = self._credentials.get("default")
         return dict(value) if value else None
+
+    def _require_ready(self) -> None:
+        if not self.configured:
+            raise MetaOAuthError("META_APP_ID, META_APP_SECRET and META_REDIRECT_URI are required")
+        if self._storage_error:
+            raise MetaOAuthError(self._storage_error)
 
     def _consume_state(self, state: str) -> None:
         key = self._digest(state)

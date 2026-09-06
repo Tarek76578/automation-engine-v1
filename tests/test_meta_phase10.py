@@ -2,10 +2,17 @@ import hashlib
 import hmac
 
 import pytest
+from cryptography.fernet import Fernet
 
 from app.core.config import settings
 from app.core.planner import AgentPlanner
 from app.integrations.meta import verify_webhook_signature
+from app.integrations.meta_credentials import (
+    EncryptedCredentialCodec,
+    MetaCredentialError,
+    UnavailableCredentialStore,
+    build_meta_credential_store,
+)
 from app.integrations.meta_oauth import MetaOAuthError, MetaOAuthManager
 
 
@@ -23,13 +30,53 @@ def test_meta_webhook_signature_requires_secret(monkeypatch):
     assert verify_webhook_signature(b"{}", "sha256=anything") is False
 
 
+def test_meta_credential_codec_encrypts_without_plaintext(monkeypatch):
+    key = Fernet.generate_key().decode("utf-8")
+    codec = EncryptedCredentialCodec(key)
+    token = "page-token-secret"
+    ciphertext = codec.encrypt(token)
+    assert ciphertext != token
+    assert token not in ciphertext
+    assert codec.decrypt(ciphertext) == token
+    monkeypatch.setattr(settings, "meta_oauth_encryption_key", "not-a-fernet-key")
+    with pytest.raises(MetaCredentialError, match="valid Fernet key"):
+        EncryptedCredentialCodec(settings.meta_oauth_encryption_key)
+
+
+def test_missing_production_encryption_key_disables_credential_store(monkeypatch):
+    monkeypatch.setattr(settings, "database_url", "postgresql+asyncpg://example")
+    monkeypatch.setattr(settings, "meta_oauth_encryption_key", "")
+    store = build_meta_credential_store()
+    assert isinstance(store, UnavailableCredentialStore)
+
+
+class MemoryStore:
+    def __init__(self):
+        self.value = None
+
+    async def initialize(self):
+        return None
+
+    async def save(self, page_id, page_name, page_access_token):
+        self.value = {
+            "page_id": page_id,
+            "page_name": page_name,
+            "page_access_token": page_access_token,
+        }
+
+    async def load(self):
+        return dict(self.value) if self.value else None
+
+
 @pytest.mark.asyncio
-async def test_meta_oauth_consumes_state_once(monkeypatch):
+async def test_meta_oauth_persists_credentials_in_store(monkeypatch):
     monkeypatch.setattr(settings, "meta_app_id", "app-id")
     monkeypatch.setattr(settings, "meta_app_secret", "app-secret")
     monkeypatch.setattr(settings, "meta_redirect_uri", "https://example.com/api/meta/oauth/callback")
     monkeypatch.setattr(settings, "meta_page_id", "page-1")
-    manager = MetaOAuthManager()
+    store = MemoryStore()
+    manager = MetaOAuthManager(store)
+    await manager.initialize()
     url, state = manager.authorization_url()
     assert "client_id=app-id" in url
 
@@ -58,9 +105,23 @@ async def test_meta_oauth_consumes_state_once(monkeypatch):
     monkeypatch.setattr("app.integrations.meta_oauth.httpx.AsyncClient", lambda **kwargs: Client())
     result = await manager.callback("code-1", state)
     assert result["connected"] is True
+    assert store.value["page_access_token"] == "page-token"
     assert manager.credentials()["page_access_token"] == "page-token"
     with pytest.raises(MetaOAuthError, match="Invalid or expired"):
         await manager.callback("code-2", state)
+
+
+@pytest.mark.asyncio
+async def test_meta_oauth_restores_credentials_from_store(monkeypatch):
+    store = MemoryStore()
+    await store.save("page-2", "Stored Page", "stored-token")
+    manager = MetaOAuthManager(store)
+    await manager.initialize()
+    assert manager.credentials() == {
+        "page_id": "page-2",
+        "page_name": "Stored Page",
+        "page_access_token": "stored-token",
+    }
 
 
 def test_meta_reply_requires_approval():
