@@ -30,6 +30,13 @@ class OAuthState:
 class MetaOAuthManager:
     """OAuth onboarding with one-time state and durable encrypted Page credentials."""
 
+    REQUIRED_SCOPES = (
+        "pages_show_list",
+        "pages_read_engagement",
+        "pages_manage_posts",
+        "pages_messaging",
+    )
+
     def __init__(self, credential_store: CredentialStore | None = None) -> None:
         self._states: dict[str, OAuthState] = {}
         self._credentials: dict[str, dict[str, str]] = {}
@@ -57,12 +64,14 @@ class MetaOAuthManager:
         self._require_ready()
         state = secrets.token_urlsafe(32)
         self._states[self._digest(state)] = OAuthState(state, time.time() + 600)
+        configured_scopes = [scope.strip() for scope in settings.meta_oauth_scopes.split(",") if scope.strip()]
+        scopes = list(dict.fromkeys([*configured_scopes, *self.REQUIRED_SCOPES]))
         params = {
             "client_id": settings.meta_app_id,
             "redirect_uri": settings.meta_redirect_uri,
             "state": state,
             "response_type": "code",
-            "scope": settings.meta_oauth_scopes,
+            "scope": ",".join(scopes),
         }
         return (
             f"https://www.facebook.com/{settings.meta_graph_api_version}/dialog/oauth?{urlencode(params)}",
