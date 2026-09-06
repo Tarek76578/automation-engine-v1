@@ -22,26 +22,27 @@ class AgentPlan(BaseModel):
 class AgentPlanner:
     """Convert an agent request into a validated, executable plan."""
 
-    ALLOWED_ACTIONS = frozenset({"prepare_message", "webhook", "http_webhook", "analyze_request", "process_request"})
-    SENSITIVE_MARKERS = ("publish", "delete", "send money", "payment", "charge", "شراء", "دفع", "حذف", "نشر")
+    ALLOWED_ACTIONS = frozenset(
+        {"prepare_message", "webhook", "http_webhook", "analyze_request", "process_request"}
+    )
+    SENSITIVE_MARKERS = (
+        "publish", "delete", "send money", "payment", "charge", "شراء", "دفع", "حذف", "نشر"
+    )
 
-    def __init__(self, provider: Any | None = None) -> None:
+    def __init__(self, provider: Any | None = None, model: str = "agent-planner") -> None:
         self.provider = provider
+        self.model = model
 
     async def plan(self, task_input: dict[str, Any], system_prompt: str = "") -> AgentPlan:
         if self.provider is not None:
             try:
                 response = await self.provider.generate(self._request(task_input, system_prompt))
-                plan = self._parse(response.text)
-                return self._validate(plan)
+                return self._validate(self._parse(response.text))
             except Exception:
-                # Planning must remain available when the configured LLM is unavailable
-                # or returns malformed output; deterministic planning is the safe fallback.
                 pass
         return self._local_plan(task_input)
 
-    @staticmethod
-    def _request(task_input: dict[str, Any], system_prompt: str) -> Any:
+    def _request(self, task_input: dict[str, Any], system_prompt: str) -> Any:
         from app.providers.base import LLMRequest
 
         prompt = (
@@ -49,13 +50,17 @@ class AgentPlanner:
             "Each step must contain action, reason, parameters. "
             f"Task: {json.dumps(task_input, ensure_ascii=False)}"
         )
-        return LLMRequest(model="agent-planner", prompt=prompt, system=system_prompt or None)
+        return LLMRequest(model=self.model, prompt=prompt, system=system_prompt or None)
 
     @staticmethod
     def _parse(text: str) -> AgentPlan:
         raw = text.strip()
         if raw.startswith("```"):
-            raw = raw.strip("`").removeprefix("json").strip()
+            raw = raw[3:].strip()
+            if raw.lower().startswith("json"):
+                raw = raw[4:].strip()
+            if raw.endswith("```"):
+                raw = raw[:-3].strip()
         try:
             return AgentPlan.model_validate_json(raw)
         except ValidationError as exc:
@@ -68,11 +73,16 @@ class AgentPlanner:
         return plan
 
     def _local_plan(self, task_input: dict[str, Any]) -> AgentPlan:
-        text = str(task_input.get("message", task_input.get("prompt", task_input.get("value", "")))).strip()
+        text = str(
+            task_input.get("message", task_input.get("prompt", task_input.get("value", "")))
+        ).strip()
         lower = text.lower()
         if task_input.get("webhook_url"):
             action = "webhook"
-            parameters = {"webhook_url": task_input["webhook_url"], "webhook_payload": task_input.get("webhook_payload", task_input)}
+            parameters = {
+                "webhook_url": task_input["webhook_url"],
+                "webhook_payload": task_input.get("webhook_payload", task_input),
+            }
         elif any(word in lower for word in ("send", "أرسل", "رسالة", "message")):
             action = "prepare_message"
             parameters = {"message": text}
@@ -87,5 +97,9 @@ class AgentPlanner:
             goal=text or "Process automation request",
             steps=[PlanStep(action=action, reason="Deterministic fallback plan", parameters=parameters)],
             requires_approval=sensitive,
-            approval_reason="The request appears to involve a sensitive or externally consequential operation." if sensitive else "",
+            approval_reason=(
+                "The request appears to involve a sensitive or externally consequential operation."
+                if sensitive
+                else ""
+            ),
         )
