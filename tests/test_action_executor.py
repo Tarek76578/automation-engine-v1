@@ -98,6 +98,24 @@ async def test_meta_page_post_executes_with_mocked_graph_client(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_meta_page_reply_executes_with_mocked_graph_client():
+    class FakeMetaClient:
+        async def send_page_message(self, recipient_id, message):
+            assert recipient_id == "user-123"
+            assert message == "hello from CarBot"
+            return {"recipient_id": recipient_id, "message_id": "m-123"}
+
+    result = await ActionExecutor(meta_client=FakeMetaClient()).execute(
+        "meta_page_reply",
+        {"recipient_id": "user-123", "message": "hello from CarBot"},
+        "execution-456",
+    )
+
+    assert result["verified"] is True
+    assert result["delivery"]["result"]["message_id"] == "m-123"
+
+
+@pytest.mark.asyncio
 async def test_meta_graph_client_requires_credentials(monkeypatch):
     monkeypatch.setattr(settings, "meta_page_access_token", "")
     monkeypatch.setattr(settings, "meta_page_id", "")
