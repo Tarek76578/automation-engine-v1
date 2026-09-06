@@ -60,7 +60,7 @@ jobs:
           parts = state.split(".")
           if len(parts) != 4 or parts[0] != "v1" or not parts[1].isdigit() or not parts[2] or not parts[3]:
               raise SystemExit("OAuth state does not have the expected signed format")
-          raise SystemExit(state)
+          print(state)
           PY
           )
 
