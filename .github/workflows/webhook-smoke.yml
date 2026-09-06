@@ -30,7 +30,7 @@ jobs:
           set -euo pipefail
           response=$(curl -fsS -X POST https://automation-engine-demo.onrender.com/api/executions \
             -H 'Content-Type: application/json' \
-            --data '{"workflow":"demo","input":{"webhook_url":"https://postman-echo.com/post","webhook_payload":{"source":"automation-engine","test":"codespaces-demo-fixed"}}}')
+            --data '{"workflow":"demo","input":{"webhook_url":"https://postman-echo.com/post","webhook_payload":{"source":"automation-engine","test":"codespaces-demo-fixed-v2"}}}')
           echo "Create response: $response"
           execution_id=$(echo "$response" | jq -r '.id')
           [[ -n "$execution_id" && "$execution_id" != "null" ]]
