@@ -32,6 +32,7 @@ class AgentPlanner:
             "meta_page_info",
             "meta_page_messages",
             "meta_page_post",
+            "meta_page_reply",
         }
     )
     SENSITIVE_MARKERS = (
@@ -44,14 +45,29 @@ class AgentPlanner:
         "post",
         "facebook post",
         "meta post",
+        "reply",
+        "messenger",
+        "facebook message",
         "شراء",
         "دفع",
         "حذف",
         "نشر",
         "منشور",
+        "رد",
+        "رسالة فيسبوك",
+        "ماسنجر",
     )
     SENSITIVE_ACTIONS = frozenset(
-        {"publish", "delete", "payment", "charge", "send_money", "spend", "meta_page_post"}
+        {
+            "publish",
+            "delete",
+            "payment",
+            "charge",
+            "send_money",
+            "spend",
+            "meta_page_post",
+            "meta_page_reply",
+        }
     )
 
     def __init__(self, provider: Any | None = None, model: str = "agent-planner") -> None:
@@ -124,6 +140,12 @@ class AgentPlanner:
             parameters = {"message": str(task_input["meta_page_post"])}
             if task_input.get("link"):
                 parameters["link"] = task_input["link"]
+        elif task_input.get("meta_page_reply"):
+            action = "meta_page_reply"
+            parameters = {
+                "recipient_id": str(task_input.get("recipient_id", "")),
+                "message": str(task_input["meta_page_reply"]),
+            }
         elif task_input.get("meta_page_messages"):
             action = "meta_page_messages"
             parameters = {"limit": task_input.get("limit", 25)}
