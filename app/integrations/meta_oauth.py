@@ -4,17 +4,14 @@ import hashlib
 import secrets
 import time
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from urllib.parse import urlencode
 from typing import Any
 
 import httpx
 
 from app.core.config import settings
-from app.integrations.meta_credentials import (
-    CredentialStore,
-    MetaCredentialError,
-    build_meta_credential_store,
-)
+from app.integrations.meta_credentials import CredentialStore, MetaCredentialError, build_meta_credential_store
 
 
 class MetaOAuthError(RuntimeError):
@@ -60,10 +57,16 @@ class MetaOAuthManager:
         except MetaCredentialError as exc:
             self._storage_error = str(exc)
 
-    def authorization_url(self) -> tuple[str, str]:
+    async def authorization_url(self) -> tuple[str, str]:
         self._require_ready()
         state = secrets.token_urlsafe(32)
-        self._states[self._digest(state)] = OAuthState(state, time.time() + 600)
+        expires_at = time.time() + 600
+        state_hash = self._digest(state)
+        try:
+            await self._store.save_oauth_state(state_hash, datetime.fromtimestamp(expires_at, UTC))
+        except MetaCredentialError as exc:
+            raise MetaOAuthError(str(exc)) from exc
+        self._states[state_hash] = OAuthState(state, expires_at)
 
         params = {
             "client_id": settings.meta_app_id,
@@ -71,16 +74,13 @@ class MetaOAuthManager:
             "state": state,
             "response_type": "code",
         }
-
         config_id = settings.meta_oauth_config_id.strip()
         if config_id:
             params["config_id"] = config_id
             params["override_default_response_type"] = "true"
         else:
             configured_scopes = [scope.strip() for scope in settings.meta_oauth_scopes.split(",") if scope.strip()]
-            scopes = list(dict.fromkeys([*configured_scopes, *self.REQUIRED_SCOPES]))
-            params["scope"] = ",".join(scopes)
-
+            params["scope"] = ",".join(dict.fromkeys([*configured_scopes, *self.REQUIRED_SCOPES]))
         return (
             f"https://www.facebook.com/{settings.meta_graph_api_version}/dialog/oauth?{urlencode(params)}",
             state,
@@ -88,7 +88,7 @@ class MetaOAuthManager:
 
     async def callback(self, code: str, state: str) -> dict[str, Any]:
         self._require_ready()
-        self._consume_state(state)
+        await self._consume_state(state)
         if not code.strip():
             raise MetaOAuthError("Meta OAuth callback is missing code")
         user_token = await self._exchange_code(code)
@@ -117,20 +117,20 @@ class MetaOAuthManager:
         if self._storage_error:
             raise MetaOAuthError(self._storage_error)
 
-    def _consume_state(self, state: str) -> None:
-        key = self._digest(state)
-        item = self._states.pop(key, None)
-        if item is None or item.value != state or item.expires_at < time.time():
+    async def _consume_state(self, state: str) -> None:
+        if not state.strip():
+            raise MetaOAuthError("Invalid or expired Meta OAuth state")
+        state_hash = self._digest(state)
+        try:
+            consumed = await self._store.consume_oauth_state(state_hash, datetime.now(UTC))
+        except MetaCredentialError as exc:
+            raise MetaOAuthError(str(exc)) from exc
+        self._states.pop(state_hash, None)
+        if not consumed:
             raise MetaOAuthError("Invalid or expired Meta OAuth state")
 
     async def _exchange_code(self, code: str) -> str:
-        params = {
-            "client_id": settings.meta_app_id,
-            "client_secret": settings.meta_app_secret,
-            "redirect_uri": settings.meta_redirect_uri,
-            "code": code,
-        }
-        result = await self._request("GET", "/oauth/access_token", params)
+        result = await self._request("GET", "/oauth/access_token", {"client_id": settings.meta_app_id, "client_secret": settings.meta_app_secret, "redirect_uri": settings.meta_redirect_uri, "code": code})
         token = str(result.get("access_token", "")).strip()
         if not token:
             raise MetaOAuthError("Meta OAuth token exchange returned no access token")
