@@ -62,6 +62,7 @@ async def test_webhook_executes_and_verifies(monkeypatch):
         async def post(self, url, json, headers):
             assert url == "https://hooks.example/hook"
             assert json["execution_id"] == "test-id"
+            assert headers["Idempotency-Key"] == "test-id"
             return Response()
 
     monkeypatch.setattr("app.core.action_executor.httpx.AsyncClient", lambda **kwargs: Client())
@@ -73,3 +74,4 @@ async def test_webhook_executes_and_verifies(monkeypatch):
     assert result["status"] == "executed"
     assert result["verified"] is True
     assert result["delivery"]["status_code"] == 204
+    assert result["delivery"]["idempotency_key"] == "test-id"
