@@ -79,6 +79,20 @@ class InMemoryCredentialStore:
         return dict(self._credentials) if self._credentials else None
 
 
+class UnavailableCredentialStore:
+    def __init__(self, reason: str) -> None:
+        self.reason = reason
+
+    async def initialize(self) -> None:
+        raise MetaCredentialError(self.reason)
+
+    async def save(self, page_id: str, page_name: str, page_access_token: str) -> None:
+        raise MetaCredentialError(self.reason)
+
+    async def load(self) -> dict[str, str] | None:
+        raise MetaCredentialError(self.reason)
+
+
 class PostgresCredentialStore:
     """Persist one Meta Page credential set encrypted at rest with Fernet."""
 
@@ -135,9 +149,16 @@ class PostgresCredentialStore:
 
 
 def build_meta_credential_store() -> CredentialStore:
-    if settings.database_url:
+    if not settings.database_url:
+        return InMemoryCredentialStore()
+    if not settings.meta_oauth_encryption_key:
+        return UnavailableCredentialStore(
+            "META_OAUTH_ENCRYPTION_KEY is required when DATABASE_URL is configured"
+        )
+    try:
         return PostgresCredentialStore(
             settings.database_url,
             settings.meta_oauth_encryption_key,
         )
-    return InMemoryCredentialStore()
+    except MetaCredentialError as exc:
+        return UnavailableCredentialStore(str(exc))

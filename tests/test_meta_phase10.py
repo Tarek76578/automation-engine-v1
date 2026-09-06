@@ -10,6 +10,8 @@ from app.integrations.meta import verify_webhook_signature
 from app.integrations.meta_credentials import (
     EncryptedCredentialCodec,
     MetaCredentialError,
+    UnavailableCredentialStore,
+    build_meta_credential_store,
 )
 from app.integrations.meta_oauth import MetaOAuthError, MetaOAuthManager
 
@@ -39,6 +41,13 @@ def test_meta_credential_codec_encrypts_without_plaintext(monkeypatch):
     monkeypatch.setattr(settings, "meta_oauth_encryption_key", "not-a-fernet-key")
     with pytest.raises(MetaCredentialError, match="valid Fernet key"):
         EncryptedCredentialCodec(settings.meta_oauth_encryption_key)
+
+
+def test_missing_production_encryption_key_disables_credential_store(monkeypatch):
+    monkeypatch.setattr(settings, "database_url", "postgresql+asyncpg://example")
+    monkeypatch.setattr(settings, "meta_oauth_encryption_key", "")
+    store = build_meta_credential_store()
+    assert isinstance(store, UnavailableCredentialStore)
 
 
 class MemoryStore:
