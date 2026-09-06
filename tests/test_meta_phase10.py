@@ -113,8 +113,11 @@ async def test_meta_oauth_persists_credentials_in_store(monkeypatch):
     class Response:
         status_code = 200
 
+        def __init__(self, payload):
+            self.payload = payload
+
         def json(self):
-            return {"access_token": "user-token"}
+            return self.payload
 
     class Client:
         async def __aenter__(self):
@@ -125,12 +128,12 @@ async def test_meta_oauth_persists_credentials_in_store(monkeypatch):
 
         async def request(self, method, url, params):
             if url.endswith("/oauth/access_token"):
-                return Response()
-            response = Response()
-            response.json = lambda: {
+                return Response({"access_token": "user-token"})
+            if url.endswith("/me"):
+                return Response({"id": "user-1", "name": "Demo User"})
+            return Response({
                 "data": [{"id": "page-1", "name": "Demo Page", "access_token": "page-token"}]
-            }
-            return response
+            })
 
     monkeypatch.setattr("app.integrations.meta_oauth.httpx.AsyncClient", lambda **kwargs: Client())
     result = await manager.callback("code-1", state)
@@ -139,6 +142,45 @@ async def test_meta_oauth_persists_credentials_in_store(monkeypatch):
     assert manager.credentials()["page_access_token"] == "page-token"
     with pytest.raises(MetaOAuthError, match="Invalid or expired"):
         await manager.callback("code-2", state)
+
+
+@pytest.mark.asyncio
+async def test_meta_oauth_empty_pages_reports_safe_identity(monkeypatch):
+    monkeypatch.setattr(settings, "meta_app_id", "app-id")
+    monkeypatch.setattr(settings, "meta_app_secret", "app-secret")
+    monkeypatch.setattr(settings, "meta_redirect_uri", "https://example.com/api/meta/oauth/callback")
+    monkeypatch.setattr(settings, "meta_oauth_config_id", "")
+    store = MemoryStore()
+    manager = MetaOAuthManager(store)
+    await manager.initialize()
+    _, state = await manager.authorization_url()
+
+    class Response:
+        status_code = 200
+
+        def __init__(self, payload):
+            self.payload = payload
+
+        def json(self):
+            return self.payload
+
+    class Client:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def request(self, method, url, params):
+            if url.endswith("/oauth/access_token"):
+                return Response({"access_token": "user-token"})
+            if url.endswith("/me"):
+                return Response({"id": "user-42", "name": "Trab Hhfk"})
+            return Response({"data": []})
+
+    monkeypatch.setattr("app.integrations.meta_oauth.httpx.AsyncClient", lambda **kwargs: Client())
+    with pytest.raises(MetaOAuthError, match=r"Trab Hhfk.*user-42.*no Facebook Pages"):
+        await manager.callback("code-1", state)
 
 
 @pytest.mark.asyncio
