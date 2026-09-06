@@ -1,5 +1,6 @@
 import hashlib
 import hmac
+from urllib.parse import parse_qs, urlparse
 
 import pytest
 from cryptography.fernet import Fernet
@@ -69,10 +70,30 @@ class MemoryStore:
 
 
 @pytest.mark.asyncio
+async def test_meta_oauth_uses_login_for_business_config(monkeypatch):
+    monkeypatch.setattr(settings, "meta_app_id", "app-id")
+    monkeypatch.setattr(settings, "meta_app_secret", "app-secret")
+    monkeypatch.setattr(settings, "meta_redirect_uri", "https://example.com/api/meta/oauth/callback")
+    monkeypatch.setattr(settings, "meta_oauth_config_id", "947332841072287")
+    manager = MetaOAuthManager(MemoryStore())
+    await manager.initialize()
+
+    url, _ = manager.authorization_url()
+    query = parse_qs(urlparse(url).query)
+    assert query["client_id"] == ["app-id"]
+    assert query["redirect_uri"] == ["https://example.com/api/meta/oauth/callback"]
+    assert query["config_id"] == ["947332841072287"]
+    assert query["response_type"] == ["code"]
+    assert query["override_default_response_type"] == ["true"]
+    assert "scope" not in query
+
+
+@pytest.mark.asyncio
 async def test_meta_oauth_persists_credentials_in_store(monkeypatch):
     monkeypatch.setattr(settings, "meta_app_id", "app-id")
     monkeypatch.setattr(settings, "meta_app_secret", "app-secret")
     monkeypatch.setattr(settings, "meta_redirect_uri", "https://example.com/api/meta/oauth/callback")
+    monkeypatch.setattr(settings, "meta_oauth_config_id", "")
     monkeypatch.setattr(settings, "meta_page_id", "page-1")
     store = MemoryStore()
     manager = MetaOAuthManager(store)
