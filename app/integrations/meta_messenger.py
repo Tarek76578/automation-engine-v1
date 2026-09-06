@@ -28,6 +28,7 @@ def _first_message(entry: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def stable_event_id(page_id: str, event: dict[str, Any]) -> str:
+    """Create a deterministic id when Meta does not provide message.mid."""
     raw = "|".join(
         [
             page_id,
