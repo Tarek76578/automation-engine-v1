@@ -7,7 +7,7 @@ from app.core.config import settings
 from app.core.planner import AgentPlanner
 from app.core.router import LLMRouter
 from app.models.agent import AgentDefinition, AgentResult, AgentTask
-from app.providers.base import LLMProvider, LLMRequest
+from app.providers.base import LLMProvider
 from app.providers.ollama import OllamaProvider
 from app.providers.openai import OpenAIProvider
 
