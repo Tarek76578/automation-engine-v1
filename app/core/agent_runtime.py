@@ -4,9 +4,10 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 from app.core.config import settings
+from app.core.planner import AgentPlanner
 from app.core.router import LLMRouter
 from app.models.agent import AgentDefinition, AgentResult, AgentTask
-from app.providers.base import LLMProvider, LLMRequest
+from app.providers.base import LLMProvider
 from app.providers.ollama import OllamaProvider
 from app.providers.openai import OpenAIProvider
 
@@ -41,16 +42,9 @@ class AgentRuntime:
         if definition is None:
             raise ValueError(f"Unknown agent: {task.agent}")
 
-        # Deterministic transport actions must not be delegated to an LLM.
-        # An LLM may classify a webhook task as a generic process_request,
-        # which prevents ActionExecutor from actually delivering the webhook.
         if task.input.get("webhook_url"):
-            return AgentResult(
-                task_id=task.id,
-                output=self._local_plan(task),
-                provider="local",
-                model="automation-planner-v1",
-            )
+            output = self._local_plan(task)
+            return AgentResult(task_id=task.id, output=output, provider="local", model="automation-planner-v1")
 
         route = self.router.route("agent", definition.provider, definition.model)
         handler = self.registry.handler(task.agent)
@@ -67,10 +61,18 @@ class AgentRuntime:
                 provider_name = "local"
                 model_name = "automation-planner-v1"
             else:
-                prompt = str(task.input.get("prompt", task.input))
                 try:
-                    response = await provider.generate(LLMRequest(model=route.model, prompt=prompt, system=definition.system_prompt or None))
-                    output = {"text": response.text, "usage": response.usage or {}}
+                    planner = AgentPlanner(provider=provider, model=route.model)
+                    plan = await planner.plan(task.input, definition.system_prompt)
+                    output = {
+                        "status": "planned_and_executed",
+                        "planner": "llm",
+                        "plan": plan.model_dump(mode="json"),
+                        "action": plan.steps[0].action,
+                        "summary": plan.goal,
+                        "input": task.input,
+                        "workflow": task.input.get("workflow", "demo"),
+                    }
                     provider_name = definition.provider or route.provider
                     model_name = definition.model or route.model
                 except Exception as exc:
@@ -91,17 +93,19 @@ class AgentRuntime:
 
     @staticmethod
     def _local_plan(task: AgentTask) -> dict[str, Any]:
-        message = str(task.input.get("message", task.input.get("prompt", ""))).strip()
-        lower = message.lower()
-        if task.input.get("webhook_url"):
-            action, summary = "webhook", "Send the automation payload to the configured HTTPS webhook and verify the response."
-        elif any(word in lower for word in ("send", "أرسل", "رسالة", "message")):
-            action, summary = "prepare_message", "Prepare the requested customer message for delivery."
-        elif any(word in lower for word in ("analy", "حلل", "حلّل", "analyse", "analyze")):
-            action, summary = "analyze_request", "Analyze the request and return structured findings."
-        else:
-            action, summary = "process_request", "Process the requested automation task and return a structured result."
-        return {"status": "planned_and_executed", "planner": "local", "action": action, "summary": summary, "input": task.input, "workflow": task.input.get("workflow", "demo"), "steps": ["understand_request", "create_plan", "execute_action", "verify_result"]}
+        planner = AgentPlanner()
+        plan = planner._local_plan(task.input)
+        first = plan.steps[0]
+        return {
+            "status": "planned_and_executed",
+            "planner": "local",
+            "action": first.action,
+            "summary": plan.goal,
+            "input": task.input,
+            "workflow": task.input.get("workflow", "demo"),
+            "steps": ["understand_request", "create_plan", "execute_action", "verify_result"],
+            "plan": plan.model_dump(mode="json"),
+        }
 
     def execute(self, task: AgentTask) -> AgentResult:
         raise RuntimeError("AgentRuntime.execute is synchronous; use execute_async")
@@ -115,7 +119,14 @@ elif settings.openai_api_key:
 else:
     default_provider, default_model = None, None
 
-registry.register(AgentDefinition(name=settings.default_agent, system_prompt="You are the default automation agent. Execute the requested automation task accurately and return concise structured results.", provider=default_provider, model=default_model))
+registry.register(
+    AgentDefinition(
+        name=settings.default_agent,
+        system_prompt="You are the default automation agent. Return a safe, structured execution plan.",
+        provider=default_provider,
+        model=default_model,
+    )
+)
 
 providers: dict[str, LLMProvider] = {}
 if settings.ollama_base_url:
