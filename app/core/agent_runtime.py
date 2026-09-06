@@ -81,7 +81,9 @@ class AgentRuntime:
     def _local_plan(task: AgentTask) -> dict[str, Any]:
         message = str(task.input.get("message", task.input.get("prompt", ""))).strip()
         lower = message.lower()
-        if any(word in lower for word in ("send", "أرسل", "رسالة", "message")):
+        if task.input.get("webhook_url"):
+            action, summary = "webhook", "Send the automation payload to the configured HTTPS webhook and verify the response."
+        elif any(word in lower for word in ("send", "أرسل", "رسالة", "message")):
             action, summary = "prepare_message", "Prepare the requested customer message for delivery."
         elif any(word in lower for word in ("analy", "حلل", "حلّل", "analyse", "analyze")):
             action, summary = "analyze_request", "Analyze the request and return structured findings."
