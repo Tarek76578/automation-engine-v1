@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     ollama_base_url: str = ""
     ollama_model: str = "llama3.2:3b"
     default_agent: str = "automation"
+    action_webhook_allowlist: str = ""
 
     model_config = SettingsConfigDict(
         env_file=".env",
