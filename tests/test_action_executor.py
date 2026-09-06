@@ -2,6 +2,7 @@ import pytest
 
 from app.core.action_executor import ActionExecutor
 from app.core.config import settings
+from app.integrations.meta import MetaGraphClient
 
 
 @pytest.mark.asyncio
@@ -75,3 +76,31 @@ async def test_webhook_executes_and_verifies(monkeypatch):
     assert result["verified"] is True
     assert result["delivery"]["status_code"] == 204
     assert result["delivery"]["idempotency_key"] == "test-id"
+
+
+@pytest.mark.asyncio
+async def test_meta_page_post_executes_with_mocked_graph_client(monkeypatch):
+    class FakeMetaClient:
+        async def publish_page_post(self, message, link=None):
+            assert message == "hello Meta"
+            assert link == "https://example.com"
+            return {"id": "post-123"}
+
+    result = await ActionExecutor(meta_client=FakeMetaClient()).execute(
+        "meta_page_post",
+        {"message": "hello Meta", "link": "https://example.com"},
+        "execution-123",
+    )
+
+    assert result["verified"] is True
+    assert result["delivery"]["channel"] == "meta-graph-api"
+    assert result["delivery"]["result"]["id"] == "post-123"
+
+
+@pytest.mark.asyncio
+async def test_meta_graph_client_requires_credentials(monkeypatch):
+    monkeypatch.setattr(settings, "meta_page_access_token", "")
+    monkeypatch.setattr(settings, "meta_page_id", "")
+    client = MetaGraphClient()
+    with pytest.raises(RuntimeError, match="META_PAGE_ACCESS_TOKEN"):
+        await client.page_info()
