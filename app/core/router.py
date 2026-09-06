@@ -21,6 +21,7 @@ class LLMRouter:
             "openai": "gpt-5",
             "anthropic": "claude-sonnet",
             "google": "gemini-flash",
+            "ollama": "llama3.2:3b",
         }
         return ModelRoute(
             provider=provider,

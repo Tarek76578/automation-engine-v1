@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: automation-engine-demo
+    runtime: docker
+    plan: free
+    branch: codespaces-demo
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/health
+    envVars:
+      - key: DEFAULT_AGENT
+        value: automation
+      - key: ACTION_WEBHOOK_ALLOWLIST
+        value: postman-echo.com

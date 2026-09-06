@@ -33,4 +33,7 @@ def test_agent_execution() -> None:
         json={"agent": "test-agent", "input": {"x": 1}},
     )
     assert response.status_code == 200
-    assert response.json()["output"]["status"] == "accepted"
+    body = response.json()
+    assert body["output"]["status"] == "planned_and_executed"
+    assert body["output"]["planner"] == "local"
+    assert body["output"]["action"] == "process_request"
