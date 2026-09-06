@@ -23,12 +23,36 @@ class AgentPlanner:
     """Convert an agent request into a validated, executable plan."""
 
     ALLOWED_ACTIONS = frozenset(
-        {"prepare_message", "webhook", "http_webhook", "analyze_request", "process_request"}
+        {
+            "prepare_message",
+            "webhook",
+            "http_webhook",
+            "analyze_request",
+            "process_request",
+            "meta_page_info",
+            "meta_page_messages",
+            "meta_page_post",
+        }
     )
     SENSITIVE_MARKERS = (
-        "publish", "delete", "send money", "payment", "charge", "spend", "شراء", "دفع", "حذف", "نشر"
+        "publish",
+        "delete",
+        "send money",
+        "payment",
+        "charge",
+        "spend",
+        "post",
+        "facebook post",
+        "meta post",
+        "شراء",
+        "دفع",
+        "حذف",
+        "نشر",
+        "منشور",
     )
-    SENSITIVE_ACTIONS = frozenset({"publish", "delete", "payment", "charge", "send_money", "spend"})
+    SENSITIVE_ACTIONS = frozenset(
+        {"publish", "delete", "payment", "charge", "send_money", "spend", "meta_page_post"}
+    )
 
     def __init__(self, provider: Any | None = None, model: str = "agent-planner") -> None:
         self.provider = provider
@@ -95,7 +119,18 @@ class AgentPlanner:
     def _local_plan(self, task_input: dict[str, Any]) -> AgentPlan:
         text = str(task_input.get("message", task_input.get("prompt", task_input.get("value", "")))).strip()
         lower = text.lower()
-        if task_input.get("webhook_url"):
+        if task_input.get("meta_page_post"):
+            action = "meta_page_post"
+            parameters = {"message": str(task_input["meta_page_post"])}
+            if task_input.get("link"):
+                parameters["link"] = task_input["link"]
+        elif task_input.get("meta_page_messages"):
+            action = "meta_page_messages"
+            parameters = {"limit": task_input.get("limit", 25)}
+        elif task_input.get("meta_page_info"):
+            action = "meta_page_info"
+            parameters = {}
+        elif task_input.get("webhook_url"):
             action = "webhook"
             parameters = {
                 "webhook_url": task_input["webhook_url"],
@@ -110,7 +145,9 @@ class AgentPlanner:
         else:
             action = "process_request"
             parameters = {"request": text}
-        sensitive = self._is_sensitive(task_input, AgentPlan(goal=text or "Process automation request", steps=[PlanStep(action=action)]))
+        sensitive = self._is_sensitive(
+            task_input, AgentPlan(goal=text or "Process automation request", steps=[PlanStep(action=action)])
+        )
         return AgentPlan(
             goal=text or "Process automation request",
             steps=[PlanStep(action=action, reason="Deterministic fallback plan", parameters=parameters)],
