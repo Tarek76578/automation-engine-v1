@@ -8,10 +8,14 @@ from urllib.parse import urlparse
 import httpx
 
 from app.core.config import settings
+from app.integrations.meta import MetaGraphClient
 
 
 class ActionExecutor:
     """Execute built-in actions with explicit verification and SSRF protection."""
+
+    def __init__(self, meta_client: MetaGraphClient | None = None) -> None:
+        self.meta_client = meta_client or MetaGraphClient()
 
     async def execute(
         self, action: str, payload: dict[str, Any], execution_id: str
@@ -35,11 +39,40 @@ class ActionExecutor:
         if action in {"webhook", "http_webhook"}:
             return await self._execute_webhook(payload, execution_id)
 
+        if action == "meta_page_info":
+            result = await self.meta_client.page_info()
+            return self._meta_result(action, result, execution_id)
+
+        if action == "meta_page_messages":
+            result = await self.meta_client.page_messages(int(payload.get("limit", 25)))
+            return self._meta_result(action, result, execution_id)
+
+        if action == "meta_page_post":
+            result = await self.meta_client.publish_page_post(
+                str(payload.get("message", "")),
+                str(payload["link"]) if payload.get("link") else None,
+            )
+            return self._meta_result(action, result, execution_id)
+
         return {
             "action": action,
             "status": "planned",
             "verified": False,
             "verification": "no_builtin_action",
+        }
+
+    @staticmethod
+    def _meta_result(action: str, result: dict[str, Any], execution_id: str) -> dict[str, Any]:
+        return {
+            "action": action,
+            "status": "executed",
+            "delivery": {
+                "channel": "meta-graph-api",
+                "execution_id": execution_id,
+                "result": result,
+            },
+            "verified": True,
+            "verification": "meta_graph_api_2xx_response",
         }
 
     async def _execute_webhook(

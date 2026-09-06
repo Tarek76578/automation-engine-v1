@@ -19,6 +19,22 @@ def test_sensitive_plan_requires_approval():
     assert plan.approval_reason
 
 
+def test_meta_page_post_plan_requires_approval():
+    plan = AgentPlanner()._local_plan({"meta_page_post": "عرض جديد على صفحتنا"})
+
+    assert plan.steps[0].action == "meta_page_post"
+    assert plan.steps[0].parameters["message"] == "عرض جديد على صفحتنا"
+    assert plan.requires_approval is True
+
+
+def test_meta_page_read_plan_does_not_require_approval():
+    plan = AgentPlanner()._local_plan({"meta_page_messages": True, "limit": 10})
+
+    assert plan.steps[0].action == "meta_page_messages"
+    assert plan.steps[0].parameters["limit"] == 10
+    assert plan.requires_approval is False
+
+
 def test_llm_json_plan_is_validated():
     plan = AgentPlanner()._parse(
         '{"goal":"send a message","steps":[{"action":"prepare_message","reason":"customer reply","parameters":{"message":"hello"}}]}'
