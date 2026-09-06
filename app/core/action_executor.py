@@ -1,16 +1,17 @@
 from __future__ import annotations
 
+import ipaddress
+import socket
 from typing import Any
+from urllib.parse import urlparse
+
+import httpx
+
+from app.core.config import settings
 
 
 class ActionExecutor:
-    """Executes safe built-in actions and returns a verifiable result.
-
-    The local message action deliberately does not contact a real customer channel.
-    It creates a delivery record in the execution result so the engine can prove
-    the execute -> verify lifecycle without pretending that an external message
-    was delivered.
-    """
+    """Execute built-in actions with explicit verification and SSRF protection."""
 
     async def execute(
         self, action: str, payload: dict[str, Any], execution_id: str
@@ -31,12 +32,70 @@ class ActionExecutor:
                 "verification": "local_demo_delivery_record_created",
             }
 
+        if action in {"webhook", "http_webhook"}:
+            return await self._execute_webhook(payload, execution_id)
+
         return {
             "action": action,
             "status": "planned",
             "verified": False,
             "verification": "no_builtin_action",
         }
+
+    async def _execute_webhook(
+        self, payload: dict[str, Any], execution_id: str
+    ) -> dict[str, Any]:
+        raw_url = str(payload.get("webhook_url", "")).strip()
+        if not raw_url:
+            raise ValueError("webhook action requires webhook_url")
+        url = self._validate_url(raw_url)
+        body = payload.get("webhook_payload", payload)
+        if not isinstance(body, dict):
+            body = {"value": body}
+        body = {"execution_id": execution_id, "payload": body}
+
+        timeout = httpx.Timeout(15.0, connect=5.0)
+        async with httpx.AsyncClient(timeout=timeout, follow_redirects=False) as client:
+            response = await client.post(url, json=body, headers={"User-Agent": "automation-engine/0.4"})
+
+        if not 200 <= response.status_code < 300:
+            raise RuntimeError(f"webhook returned HTTP {response.status_code}")
+
+        return {
+            "action": "webhook",
+            "status": "executed",
+            "delivery": {"channel": "http", "url": url, "status_code": response.status_code},
+            "verified": True,
+            "verification": "http_2xx_response",
+        }
+
+    @staticmethod
+    def _validate_url(raw_url: str) -> str:
+        parsed = urlparse(raw_url)
+        if parsed.scheme != "https" or not parsed.hostname:
+            raise ValueError("webhook_url must use HTTPS")
+        host = parsed.hostname.lower().rstrip(".")
+        allowed = {
+            item.strip().lower().rstrip(".")
+            for item in settings.action_webhook_allowlist.split(",")
+            if item.strip()
+        }
+        if allowed and host not in allowed:
+            raise ValueError("webhook host is not in ACTION_WEBHOOK_ALLOWLIST")
+        if not allowed:
+            raise ValueError("ACTION_WEBHOOK_ALLOWLIST must be configured for webhook actions")
+        try:
+            addresses = {
+                info[4][0]
+                for info in socket.getaddrinfo(host, 443, type=socket.SOCK_STREAM)
+            }
+        except socket.gaierror as exc:
+            raise ValueError("webhook host could not be resolved") from exc
+        for address in addresses:
+            ip = ipaddress.ip_address(address)
+            if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast:
+                raise ValueError("webhook host resolves to a blocked IP address")
+        return raw_url
 
 
 action_executor = ActionExecutor()
