@@ -171,11 +171,21 @@ class MetaOAuthManager:
         return token
 
     async def _list_pages(self, user_token: str) -> list[dict[str, Any]]:
+        # Diagnose the authenticated Meta identity without ever exposing the access token.
+        identity = await self._request("GET", "/me", {"access_token": user_token, "fields": "id,name"})
         result = await self._request("GET", "/me/accounts", {"access_token": user_token, "fields": "id,name,access_token"})
         data = result.get("data", [])
         if not isinstance(data, list):
             raise MetaOAuthError("Meta returned an invalid Page list")
-        return [item for item in data if isinstance(item, dict)]
+        pages = [item for item in data if isinstance(item, dict)]
+        if not pages:
+            identity_id = str(identity.get("id", "")).strip() or "unknown"
+            identity_name = str(identity.get("name", "")).strip() or "unknown"
+            raise MetaOAuthError(
+                f"Meta authenticated account '{identity_name}' ({identity_id}) but returned no Facebook Pages. "
+                "Verify that this account has Page access/content-management rights and that the selected Login for Business configuration grants Page access."
+            )
+        return pages
 
     @staticmethod
     def _select_page(pages: list[dict[str, Any]]) -> dict[str, Any]:
