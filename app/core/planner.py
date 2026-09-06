@@ -76,12 +76,11 @@ class AgentPlanner:
         except ValidationError as exc:
             raise ValueError("LLM returned an invalid agent plan") from exc
 
-    def _validate(self, plan: AgentPlan, task_input: dict[str, Any]) -> AgentPlan:
+    def _validate(self, plan: AgentPlan, task_input: dict[str, Any] | None = None) -> AgentPlan:
         for step in plan.steps:
             if step.action not in self.ALLOWED_ACTIONS:
                 raise ValueError(f"unsupported planned action: {step.action}")
-        sensitive = self._is_sensitive(task_input, plan)
-        if sensitive:
+        if task_input is not None and self._is_sensitive(task_input, plan):
             plan.requires_approval = True
             if not plan.approval_reason:
                 plan.approval_reason = "The request contains a sensitive or externally consequential operation."
