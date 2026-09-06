@@ -2,12 +2,20 @@ from __future__ import annotations
 
 import logging
 from datetime import UTC, datetime
+from time import monotonic
 from typing import Any
 
 from app.core.action_executor import action_executor
 from app.core.agent_runtime import AgentRuntime
 from app.core.config import settings
 from app.core.job_queue import Job, Queue
+from app.core.observability import (
+    ACTIONS_TOTAL,
+    EXECUTIONS_TOTAL,
+    EXECUTION_DURATION_SECONDS,
+    EXECUTION_RETRIES_TOTAL,
+    IDEMPOTENCY_HITS_TOTAL,
+)
 from app.core.persistence import ExecutionRepository
 from app.core.state_machine import transition
 from app.integrations.n8n import N8nClient
@@ -37,18 +45,24 @@ class ExecutionOrchestrator:
         if idempotency_key:
             existing = await self.repository.get_by_idempotency_key(idempotency_key)
             if existing is not None:
+                IDEMPOTENCY_HITS_TOTAL.labels(workflow=existing.workflow).inc()
                 return existing
             execution.idempotency_key = idempotency_key
         existing = await self.repository.get(str(execution.id))
         if existing is not None:
+            if idempotency_key:
+                IDEMPOTENCY_HITS_TOTAL.labels(workflow=existing.workflow).inc()
             return existing
         saved = await self.repository.save(execution)
         if str(saved.id) != str(execution.id):
+            if idempotency_key:
+                IDEMPOTENCY_HITS_TOTAL.labels(workflow=saved.workflow).inc()
             return saved
         await self.queue.enqueue(Job(execution_id=execution.id))
         return saved
 
     async def process(self, execution_id: str) -> Execution | None:
+        started = monotonic()
         execution = await self.repository.get(execution_id)
         if execution is None:
             return None
@@ -75,7 +89,12 @@ class ExecutionOrchestrator:
 
             action = str(output.get("action", "")).strip()
             if action:
-                output["execution"] = await action_executor.execute(action, task_input, str(execution.id))
+                try:
+                    output["execution"] = await action_executor.execute(action, task_input, str(execution.id))
+                    ACTIONS_TOTAL.labels(action=action, status="succeeded").inc()
+                except Exception:
+                    ACTIONS_TOTAL.labels(action=action, status="failed").inc()
+                    raise
 
             webhook = execution.input.get("n8n_webhook")
             if webhook:
@@ -89,15 +108,20 @@ class ExecutionOrchestrator:
             transition(execution, ExecutionStatus.succeeded)
             execution.output = output
             execution.error = None
+            EXECUTIONS_TOTAL.labels(workflow=execution.workflow, status="succeeded").inc()
+            EXECUTION_DURATION_SECONDS.labels(workflow=execution.workflow, status="succeeded").observe(monotonic() - started)
         except Exception as exc:
             execution.error = str(exc)
             if execution.attempts >= self.max_attempts:
                 transition(execution, ExecutionStatus.failed)
+                EXECUTIONS_TOTAL.labels(workflow=execution.workflow, status="failed").inc()
+                EXECUTION_DURATION_SECONDS.labels(workflow=execution.workflow, status="failed").observe(monotonic() - started)
             else:
                 transition(execution, ExecutionStatus.queued)
                 await self.repository.save(execution)
                 delay = self._retry_delay(execution.attempts)
                 await self.queue.enqueue(Job(execution_id=execution.id), delay_seconds=delay)
+                EXECUTION_RETRIES_TOTAL.labels(workflow=execution.workflow).inc()
                 logger.warning("execution retry scheduled", extra={"execution_id": execution_id, "attempt": execution.attempts, "retry_delay_seconds": delay})
                 return execution
         execution.updated_at = datetime.now(UTC)
