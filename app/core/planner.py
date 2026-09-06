@@ -22,27 +22,18 @@ class AgentPlan(BaseModel):
 class AgentPlanner:
     """Convert an agent request into a validated, executable plan."""
 
-    ALLOWED_ACTIONS = frozenset(
-        {
-            "prepare_message",
-            "webhook",
-            "http_webhook",
-            "analyze_request",
-            "process_request",
-            "meta_page_info",
-            "meta_page_messages",
-            "meta_page_post",
-            "meta_page_reply",
-        }
-    )
+    ALLOWED_ACTIONS = frozenset({
+        "prepare_message", "webhook", "http_webhook", "analyze_request", "process_request",
+        "meta_page_info", "meta_page_messages", "meta_page_post", "meta_page_reply",
+    })
     SENSITIVE_MARKERS = (
         "publish", "delete", "send money", "payment", "charge", "spend", "post",
         "facebook post", "meta post", "reply", "messenger", "facebook message",
         "شراء", "دفع", "حذف", "نشر", "منشور", "رد", "رسالة فيسبوك", "ماسنجر",
     )
-    SENSITIVE_ACTIONS = frozenset(
-        {"publish", "delete", "payment", "charge", "send_money", "spend", "meta_page_post", "meta_page_reply"}
-    )
+    SENSITIVE_ACTIONS = frozenset({
+        "publish", "delete", "payment", "charge", "send_money", "spend", "meta_page_post", "meta_page_reply",
+    })
 
     def __init__(self, provider: Any | None = None, model: str = "agent-planner") -> None:
         self.provider = provider
@@ -69,11 +60,15 @@ class AgentPlanner:
     def _request(self, task_input: dict[str, Any], system_prompt: str) -> Any:
         from app.providers.base import LLMRequest
 
+        context = task_input.get("conversation_context", [])
+        context_text = json.dumps(context[-12:], ensure_ascii=False) if isinstance(context, list) else "[]"
         prompt = (
             "Return JSON only with keys goal, steps, requires_approval, approval_reason. "
             "Each step must contain action, reason, parameters. "
             "For an inbound Messenger customer message, create one meta_page_reply step "
             "using the same recipient_id and write a concise helpful reply in the user's language. "
+            "Use the conversation context to avoid repeating questions and maintain continuity. "
+            f"Conversation context: {context_text}. "
             f"Task: {json.dumps(task_input, ensure_ascii=False)}"
         )
         return LLMRequest(model=self.model, prompt=prompt, system=system_prompt or None)
