@@ -1,5 +1,6 @@
 import pytest
 
+from app.core.action_executor import action_executor
 from app.core.agent_runtime import AgentRegistry, AgentRuntime
 from app.core.job_queue import InMemoryQueue
 from app.core.orchestrator import ExecutionOrchestrator
@@ -136,3 +137,48 @@ async def test_execution_retries_and_eventually_fails() -> None:
     assert final is not None
     assert final.status is ExecutionStatus.failed
     assert final.attempts == 2
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_executes_and_verifies_action(monkeypatch) -> None:
+    registry = AgentRegistry()
+
+    async def handler(task, definition):
+        return {"action": "prepare_message", "summary": "send greeting"}
+
+    registry.register(AgentDefinition(name="automation"), handler)
+    runtime = AgentRuntime(registry, LLMRouter())
+    repository = InMemoryExecutionRepository()
+    queue = InMemoryQueue()
+    orchestrator = ExecutionOrchestrator(repository, queue, runtime)
+
+    calls = []
+
+    async def fake_execute(action, payload, execution_id):
+        calls.append((action, payload, execution_id))
+        return {
+            "action": action,
+            "status": "executed",
+            "verified": True,
+            "verification": "test_verified",
+        }
+
+    monkeypatch.setattr(action_executor, "execute", fake_execute)
+
+    execution = await orchestrator.submit(
+        Execution(
+            workflow="automation",
+            input={"agent": "automation", "input": {"message": "hello"}},
+        )
+    )
+
+    await ExecutionWorker(queue, orchestrator).run_once()
+    result = await repository.get(str(execution.id))
+
+    assert result is not None
+    assert result.status is ExecutionStatus.succeeded
+    assert result.output is not None
+    assert result.output["execution"]["verified"] is True
+    assert calls == [
+        ("prepare_message", {"message": "hello"}, str(execution.id))
+    ]
