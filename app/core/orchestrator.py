@@ -42,6 +42,17 @@ class ExecutionOrchestrator:
         exponent = max(0, attempt - 1)
         return min(self.retry_max_delay_seconds, self.retry_base_delay_seconds * (2**exponent))
 
+    @staticmethod
+    def _action_payload(output: dict[str, Any], task_input: dict[str, Any]) -> dict[str, Any]:
+        plan = output.get("plan")
+        if isinstance(plan, dict):
+            steps = plan.get("steps")
+            if isinstance(steps, list) and steps and isinstance(steps[0], dict):
+                parameters = steps[0].get("parameters")
+                if isinstance(parameters, dict):
+                    return parameters
+        return task_input
+
     async def submit(self, execution: Execution, idempotency_key: str | None = None) -> Execution:
         if idempotency_key:
             existing = await self.repository.get_by_idempotency_key(idempotency_key)
@@ -116,7 +127,7 @@ class ExecutionOrchestrator:
             action = str(output.get("action", "")).strip()
             if action:
                 try:
-                    output["execution"] = await action_executor.execute(action, task_input, str(execution.id))
+                    output["execution"] = await action_executor.execute(action, self._action_payload(output, task_input), str(execution.id))
                     ACTIONS_TOTAL.labels(action=action, status="succeeded").inc()
                 except Exception:
                     ACTIONS_TOTAL.labels(action=action, status="failed").inc()
@@ -229,8 +240,7 @@ class ExecutionOrchestrator:
 
     async def _resume_after_approval(self, execution: Execution) -> Execution:
         await self.repository.save(execution)
-        result = await self._execute_planned_action(execution)
-        return result
+        return await self._execute_planned_action(execution)
 
     async def _execute_planned_action(self, execution: Execution) -> Execution:
         started = monotonic()
@@ -241,7 +251,7 @@ class ExecutionOrchestrator:
         action = str(output.get("action", "")).strip()
         try:
             if action:
-                output["execution"] = await action_executor.execute(action, task_input, str(execution.id))
+                output["execution"] = await action_executor.execute(action, self._action_payload(output, task_input), str(execution.id))
                 ACTIONS_TOTAL.labels(action=action, status="succeeded").inc()
                 if output["execution"].get("verified") is not True:
                     raise RuntimeError(f"action '{action}' could not be verified")
