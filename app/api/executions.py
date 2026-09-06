@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 
 from app.core.agent_runtime import agent_runtime
 from app.core.config import settings
+from app.core.job_queue import queue
 from app.core.orchestrator import ExecutionOrchestrator
 from app.core.persistence import execution_repository
 from app.integrations.n8n import N8nClient
