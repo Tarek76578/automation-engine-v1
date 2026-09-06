@@ -1,3 +1,5 @@
+import pytest
+
 from app.core.agent_runtime import AgentRegistry, AgentRuntime
 from app.core.router import LLMRouter
 from app.models.agent import AgentDefinition, AgentTask
@@ -20,6 +22,7 @@ class FakeProvider:
         )
 
 
+@pytest.mark.asyncio
 async def test_runtime_uses_structured_llm_plan():
     registry = AgentRegistry()
     registry.register(
