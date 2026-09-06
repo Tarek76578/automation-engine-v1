@@ -47,7 +47,13 @@ async def meta_oauth_callback(code: str = "", state: str = "", error: str = "") 
 @router.get("/oauth/status")
 async def meta_oauth_status() -> dict[str, object]:
     credentials = meta_oauth_manager.credentials()
-    return {"oauth_configured": meta_oauth_manager.configured, "connected": bool(credentials), "page_id": credentials.get("page_id") if credentials else None}
+    return {
+        "oauth_configured": meta_oauth_manager.configured,
+        "storage_configured": meta_oauth_manager.storage_configured,
+        "connected": bool(credentials),
+        "page_id": credentials.get("page_id") if credentials else None,
+        "page_name": credentials.get("page_name") if credentials else None,
+    }
 
 
 @router.get("/webhook")

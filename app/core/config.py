@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     meta_redirect_uri: str = ""
     meta_oauth_scopes: str = "pages_show_list,pages_read_engagement,pages_manage_posts,pages_messaging"
     meta_webhook_verify_token: str = ""
+    meta_oauth_encryption_key: str = ""
     meta_messenger_auto_reply: bool = False
     meta_messenger_context_messages: int = 12
 
