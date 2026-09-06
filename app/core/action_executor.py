@@ -56,7 +56,14 @@ class ActionExecutor:
 
         timeout = httpx.Timeout(15.0, connect=5.0)
         async with httpx.AsyncClient(timeout=timeout, follow_redirects=False) as client:
-            response = await client.post(url, json=body, headers={"User-Agent": "automation-engine/0.4"})
+            response = await client.post(
+                url,
+                json=body,
+                headers={
+                    "User-Agent": "automation-engine/0.4",
+                    "Idempotency-Key": execution_id,
+                },
+            )
 
         if not 200 <= response.status_code < 300:
             raise RuntimeError(f"webhook returned HTTP {response.status_code}")
@@ -64,7 +71,12 @@ class ActionExecutor:
         return {
             "action": "webhook",
             "status": "executed",
-            "delivery": {"channel": "http", "url": url, "status_code": response.status_code},
+            "delivery": {
+                "channel": "http",
+                "url": url,
+                "status_code": response.status_code,
+                "idempotency_key": execution_id,
+            },
             "verified": True,
             "verification": "http_2xx_response",
         }
