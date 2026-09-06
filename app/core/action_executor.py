@@ -54,6 +54,13 @@ class ActionExecutor:
             )
             return self._meta_result(action, result, execution_id)
 
+        if action == "meta_page_reply":
+            result = await self.meta_client.send_page_message(
+                str(payload.get("recipient_id", "")),
+                str(payload.get("message", "")),
+            )
+            return self._meta_result(action, result, execution_id)
+
         return {
             "action": action,
             "status": "planned",
