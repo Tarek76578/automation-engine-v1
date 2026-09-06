@@ -7,15 +7,11 @@ services:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/automation
       REDIS_URL: redis://redis:6379/0
       N8N_BASE_URL: http://n8n:5678
-      OLLAMA_BASE_URL: http://ollama:11434/v1
-      OLLAMA_MODEL: llama3.2:3b
       DEFAULT_AGENT: automation
     depends_on:
       postgres:
         condition: service_healthy
       redis:
-        condition: service_healthy
-      ollama:
         condition: service_healthy
       n8n:
         condition: service_healthy
@@ -27,15 +23,11 @@ services:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/automation
       REDIS_URL: redis://redis:6379/0
       N8N_BASE_URL: http://n8n:5678
-      OLLAMA_BASE_URL: http://ollama:11434/v1
-      OLLAMA_MODEL: llama3.2:3b
       DEFAULT_AGENT: automation
     depends_on:
       postgres:
         condition: service_healthy
       redis:
-        condition: service_healthy
-      ollama:
         condition: service_healthy
       n8n:
         condition: service_healthy
@@ -62,20 +54,6 @@ services:
       timeout: 3s
       retries: 20
 
-  ollama:
-    image: ollama/ollama:latest
-    ports:
-      - "11434:11434"
-    volumes:
-      - ollama_data:/root/.ollama
-    command: ["/bin/sh", "-c", "ollama serve & pid=$$!; until ollama list >/dev/null 2>&1; do sleep 2; done; ollama pull llama3.2:3b; wait $$pid"]
-    healthcheck:
-      test: ["CMD-SHELL", "ollama list | grep -q 'llama3.2:3b'"]
-      interval: 10s
-      timeout: 5s
-      retries: 60
-      start_period: 10s
-
   n8n:
     image: n8nio/n8n:latest
     ports:
@@ -98,5 +76,4 @@ services:
 
 volumes:
   postgres_data:
-  ollama_data:
   n8n_data:
