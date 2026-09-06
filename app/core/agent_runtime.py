@@ -40,6 +40,18 @@ class AgentRuntime:
         definition = self.registry.get(task.agent)
         if definition is None:
             raise ValueError(f"Unknown agent: {task.agent}")
+
+        # Deterministic transport actions must not be delegated to an LLM.
+        # An LLM may classify a webhook task as a generic process_request,
+        # which prevents ActionExecutor from actually delivering the webhook.
+        if task.input.get("webhook_url"):
+            return AgentResult(
+                task_id=task.id,
+                output=self._local_plan(task),
+                provider="local",
+                model="automation-planner-v1",
+            )
+
         route = self.router.route("agent", definition.provider, definition.model)
         handler = self.registry.handler(task.agent)
         if handler is not None:
