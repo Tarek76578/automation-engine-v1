@@ -1,5 +1,6 @@
 import hashlib
 import hmac
+from datetime import UTC, datetime
 
 import pytest
 from cryptography.fernet import Fernet
@@ -53,6 +54,7 @@ def test_missing_production_encryption_key_disables_credential_store(monkeypatch
 class MemoryStore:
     def __init__(self):
         self.value = None
+        self.oauth_states = {}
 
     async def initialize(self):
         return None
@@ -66,6 +68,13 @@ class MemoryStore:
 
     async def load(self):
         return dict(self.value) if self.value else None
+
+    async def save_oauth_state(self, state_hash, expires_at):
+        self.oauth_states[state_hash] = expires_at
+
+    async def consume_oauth_state(self, state_hash, now):
+        expires_at = self.oauth_states.pop(state_hash, None)
+        return expires_at is not None and expires_at >= now
 
 
 @pytest.mark.asyncio
