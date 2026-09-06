@@ -5,14 +5,15 @@ import json
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 
+from app.core.agent_runtime import agent_runtime
 from app.core.config import settings
+from app.core.job_queue import queue
 from app.core.orchestrator import ExecutionOrchestrator
 from app.core.persistence import execution_repository
-from app.core.agent_runtime import agent_runtime
-from app.core.job_queue import queue
 from app.integrations.meta import meta_graph_client, verify_webhook_signature
-from app.integrations.meta_oauth import MetaOAuthError, meta_oauth_manager
 from app.integrations.meta_messenger import parse_page_messenger_events
+from app.integrations.meta_oauth import MetaOAuthError, meta_oauth_manager
+from app.integrations.messenger_memory import messenger_memory
 from app.models.execution import Execution
 
 router = APIRouter(prefix="/meta", tags=["meta"])
@@ -78,21 +79,29 @@ async def meta_webhook_receive(request: Request) -> dict[str, object]:
     events = parse_page_messenger_events(payload)
     accepted: list[dict[str, object]] = []
     for event in events:
+        event_id = str(event["event_id"])
+        page_id = str(event["page_id"])
+        sender_id = str(event["sender_id"])
+        message = str(event["message"])
+        await messenger_memory.record_inbound(page_id, sender_id, message, event_id, event.get("timestamp"))
+        context = await messenger_memory.recent_context(page_id, sender_id, limit=settings.meta_messenger_context_messages)
         execution = Execution(
             workflow="meta_messenger",
             input={
-                "message": event["message"],
-                "recipient_id": event["sender_id"],
-                "page_id": event["page_id"],
-                "event_id": event["event_id"],
+                "message": message,
+                "recipient_id": sender_id,
+                "page_id": page_id,
+                "event_id": event_id,
                 "message_id": event.get("message_id"),
                 "timestamp": event.get("timestamp"),
+                "conversation_key": f"meta:{page_id}:{sender_id}",
+                "conversation_context": context,
                 "meta_messenger_inbound": True,
                 "meta_messenger_auto_reply": settings.meta_messenger_auto_reply,
             },
         )
-        saved = await _meta_orchestrator.submit(execution, str(event["event_id"]))
-        accepted.append({"event_id": event["event_id"], "execution_id": str(saved.id), "status": saved.status.value, "deduplicated": str(saved.id) != str(execution.id)})
+        saved = await _meta_orchestrator.submit(execution, event_id)
+        accepted.append({"event_id": event_id, "execution_id": str(saved.id), "status": saved.status.value, "deduplicated": str(saved.id) != str(execution.id)})
 
     return {
         "received": True,
