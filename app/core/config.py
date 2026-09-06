@@ -20,6 +20,11 @@ class Settings(BaseSettings):
     meta_page_id: str = ""
     meta_page_access_token: str = ""
     meta_graph_api_version: str = "v23.0"
+    meta_app_id: str = ""
+    meta_app_secret: str = ""
+    meta_redirect_uri: str = ""
+    meta_oauth_scopes: str = "pages_show_list,pages_read_engagement,pages_manage_posts,pages_messaging"
+    meta_webhook_verify_token: str = ""
 
     model_config = SettingsConfigDict(
         env_file=".env",
