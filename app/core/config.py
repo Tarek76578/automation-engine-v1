@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     meta_app_id: str = ""
     meta_app_secret: str = ""
     meta_redirect_uri: str = ""
-    meta_oauth_config_id: str = ""
+    meta_oauth_config_id: str = "947332841072287"
     meta_oauth_scopes: str = "pages_show_list,pages_read_engagement,pages_manage_posts,pages_messaging"
     meta_webhook_verify_token: str = ""
     meta_oauth_encryption_key: str = ""
