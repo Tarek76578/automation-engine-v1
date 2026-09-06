@@ -38,9 +38,18 @@ class AgentPlanner:
             try:
                 response = await self.provider.generate(self._request(task_input, system_prompt))
                 return self._validate(self._parse(response.text))
-            except Exception:
-                pass
+            except Exception as exc:
+                if self._is_rate_limit_error(exc):
+                    raise
+                return self._local_plan(task_input)
         return self._local_plan(task_input)
+
+    @staticmethod
+    def _is_rate_limit_error(exc: Exception) -> bool:
+        response = getattr(exc, "response", None)
+        return (response is not None and getattr(response, "status_code", None) == 429) or (
+            "429" in str(exc) and "too many requests" in str(exc).lower()
+        )
 
     def _request(self, task_input: dict[str, Any], system_prompt: str) -> Any:
         from app.providers.base import LLMRequest
