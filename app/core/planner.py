@@ -26,8 +26,9 @@ class AgentPlanner:
         {"prepare_message", "webhook", "http_webhook", "analyze_request", "process_request"}
     )
     SENSITIVE_MARKERS = (
-        "publish", "delete", "send money", "payment", "charge", "شراء", "دفع", "حذف", "نشر"
+        "publish", "delete", "send money", "payment", "charge", "spend", "شراء", "دفع", "حذف", "نشر"
     )
+    SENSITIVE_ACTIONS = frozenset({"publish", "delete", "payment", "charge", "send_money", "spend"})
 
     def __init__(self, provider: Any | None = None, model: str = "agent-planner") -> None:
         self.provider = provider
@@ -37,7 +38,7 @@ class AgentPlanner:
         if self.provider is not None:
             try:
                 response = await self.provider.generate(self._request(task_input, system_prompt))
-                return self._validate(self._parse(response.text))
+                return self._validate(self._parse(response.text), task_input)
             except Exception as exc:
                 if self._is_rate_limit_error(exc):
                     raise
@@ -75,16 +76,25 @@ class AgentPlanner:
         except ValidationError as exc:
             raise ValueError("LLM returned an invalid agent plan") from exc
 
-    def _validate(self, plan: AgentPlan) -> AgentPlan:
+    def _validate(self, plan: AgentPlan, task_input: dict[str, Any]) -> AgentPlan:
         for step in plan.steps:
             if step.action not in self.ALLOWED_ACTIONS:
                 raise ValueError(f"unsupported planned action: {step.action}")
+        sensitive = self._is_sensitive(task_input, plan)
+        if sensitive:
+            plan.requires_approval = True
+            if not plan.approval_reason:
+                plan.approval_reason = "The request contains a sensitive or externally consequential operation."
         return plan
 
+    def _is_sensitive(self, task_input: dict[str, Any], plan: AgentPlan) -> bool:
+        text = json.dumps(task_input, ensure_ascii=False).lower()
+        if any(marker in text for marker in self.SENSITIVE_MARKERS):
+            return True
+        return any(step.action.lower() in self.SENSITIVE_ACTIONS for step in plan.steps)
+
     def _local_plan(self, task_input: dict[str, Any]) -> AgentPlan:
-        text = str(
-            task_input.get("message", task_input.get("prompt", task_input.get("value", "")))
-        ).strip()
+        text = str(task_input.get("message", task_input.get("prompt", task_input.get("value", "")))).strip()
         lower = text.lower()
         if task_input.get("webhook_url"):
             action = "webhook"
@@ -101,7 +111,7 @@ class AgentPlanner:
         else:
             action = "process_request"
             parameters = {"request": text}
-        sensitive = any(marker in lower for marker in self.SENSITIVE_MARKERS)
+        sensitive = self._is_sensitive(task_input, AgentPlan(goal=text or "Process automation request", steps=[PlanStep(action=action)]))
         return AgentPlan(
             goal=text or "Process automation request",
             steps=[PlanStep(action=action, reason="Deterministic fallback plan", parameters=parameters)],
