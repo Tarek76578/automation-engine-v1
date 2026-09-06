@@ -14,7 +14,11 @@ def test_health() -> None:
 
 
 def test_execution_idempotency() -> None:
-    payload = {"workflow": "lead-enrichment", "input": {"lead": "123"}, "idempotency_key": "abc-123"}
+    payload = {
+        "workflow": "lead-enrichment",
+        "input": {"lead": "123"},
+        "idempotency_key": "abc-123",
+    }
     first = client.post("/api/executions", json=payload)
     second = client.post("/api/executions", json=payload)
     assert first.status_code == 202
@@ -24,6 +28,12 @@ def test_execution_idempotency() -> None:
 
 def test_agent_execution() -> None:
     registry.register(AgentDefinition(name="test-agent"))
-    response = client.post("/api/agents/execute", json={"agent": "test-agent", "input": {"x": 1}})
-    assert response.status_code == 202
-    assert response.json()["output"]["status"] == "accepted"
+    response = client.post(
+        "/api/agents/execute",
+        json={"agent": "test-agent", "input": {"x": 1}},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["output"]["status"] == "planned_and_executed"
+    assert body["output"]["planner"] == "local"
+    assert body["output"]["action"] == "process_request"

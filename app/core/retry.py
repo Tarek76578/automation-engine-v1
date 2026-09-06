@@ -2,7 +2,11 @@ from collections.abc import Callable
 from time import sleep
 
 
-def with_retry(operation: Callable[[], object], attempts: int = 3, delay_seconds: float = 0.25) -> object:
+def with_retry(
+    operation: Callable[[], object],
+    attempts: int = 3,
+    delay_seconds: float = 0.25,
+) -> object:
     """Execute an operation with bounded retries; preserve the final exception."""
     if attempts < 1:
         raise ValueError("attempts must be >= 1")

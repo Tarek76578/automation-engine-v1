@@ -1,5 +1,3 @@
-from enum import Enum
-
 from app.models.execution import Execution, ExecutionStatus
 
 
@@ -12,6 +10,7 @@ _ALLOWED: dict[ExecutionStatus, set[ExecutionStatus]] = {
     ExecutionStatus.running: {
         ExecutionStatus.succeeded,
         ExecutionStatus.failed,
+        ExecutionStatus.queued,
         ExecutionStatus.waiting_approval,
     },
     ExecutionStatus.waiting_approval: {

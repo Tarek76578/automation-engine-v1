@@ -1,0 +1,57 @@
+name: Webhook smoke test
+
+on:
+  push:
+    branches: [codespaces-demo]
+
+jobs:
+  render-webhook-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait for Render deployment and verify live webhook
+        shell: bash
+        run: |
+          set -euo pipefail
+          for i in {1..30}; do
+            echo "Render smoke attempt $i/30"
+            body=$(curl -fsS https://automation-engine-demo.onrender.com/api/health || true)
+            if [[ "$body" != *'"status":"healthy"'* ]]; then
+              echo "Render is not healthy yet"
+              sleep 10
+              continue
+            fi
+
+            response=$(curl -fsS -X POST https://automation-engine-demo.onrender.com/api/executions \
+              -H 'Content-Type: application/json' \
+              --data '{"workflow":"demo","input":{"webhook_url":"https://postman-echo.com/post","webhook_payload":{"source":"automation-engine","test":"codespaces-demo-fixed-v3"}}}')
+            echo "Create response: $response"
+            execution_id=$(echo "$response" | jq -r '.id')
+            if [[ -z "$execution_id" || "$execution_id" == "null" ]]; then
+              echo "Render did not return an execution id"
+              sleep 10
+              continue
+            fi
+
+            run_response=$(curl -fsS -X POST "https://automation-engine-demo.onrender.com/api/executions/$execution_id/run" \
+              -H 'Content-Type: application/json')
+            echo "Run response: $run_response"
+
+            status=$(echo "$run_response" | jq -r '.status')
+            verified=$(echo "$run_response" | jq -r '.output.execution.verified // false')
+            action=$(echo "$run_response" | jq -r '.output.execution.action // ""')
+            error=$(echo "$run_response" | jq -r '.error // ""')
+
+            if [[ "$status" == "succeeded" && "$verified" == "true" && "$action" == "webhook" ]]; then
+              echo "Render -> HTTPS webhook -> 2xx verification passed"
+              exit 0
+            fi
+
+            echo "Webhook smoke not ready: action=$action status=$status verified=$verified error=$error"
+            sleep 10
+          done
+
+          echo "Render webhook smoke did not pass within 5 minutes"
+          exit 1
+
+      - name: Report
+        run: echo "Real Render -> HTTPS webhook -> 2xx verification passed"

@@ -1,0 +1,52 @@
+{
+  "name": "Automation Engine Demo",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "automation-engine-demo",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "6c7f2a2f-7b5d-4f80-9e77-1b7f3e2b6d01",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-360, 0],
+      "webhookId": "automation-engine-demo"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $json;\nreturn [{ json: { status: 'received', execution_id: input.execution_id ?? null, ai_text: input.output?.text ?? null, provider: input.output?.provider ?? null, model: input.output?.model ?? null } }];"
+      },
+      "id": "b17e5f9a-4a6a-43a4-bc7f-7a9b2f2e6d02",
+      "name": "Normalize Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-100, 0]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "f3a6b9c1-2d4e-45f7-8a9b-0c1d2e3f4a05",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [180, 0]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [[{"node": "Normalize Result", "type": "main", "index": 0}]]
+    },
+    "Normalize Result": {
+      "main": [[{"node": "Respond", "type": "main", "index": 0}]]
+    }
+  },
+  "active": true,
+  "settings": {"executionOrder": "v1"},
+  "versionId": "automation-engine-demo-v2"
+}
