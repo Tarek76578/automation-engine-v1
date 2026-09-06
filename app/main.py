@@ -1,6 +1,8 @@
 from html import escape
+import json
+from urllib.parse import parse_qs
 
-from fastapi import FastAPI, Request, Form
+from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
 from app.api.agents import router as agents_router
@@ -40,8 +42,9 @@ async def correlation_middleware(request: Request, call_next):
 
 
 @app.post("/demo/run", response_class=HTMLResponse)
-async def demo_run(task: str = Form("")) -> str:
-    task = task.strip()
+async def demo_run(request: Request) -> str:
+    body = (await request.body()).decode("utf-8", errors="replace")
+    task = parse_qs(body).get("task", [""])[0].strip()
     if not task:
         return demo_page("", "Please enter a task.", error=True)
 
@@ -52,10 +55,9 @@ async def demo_run(task: str = Form("")) -> str:
         return demo_page(task, "Execution not found.", error=True)
 
     if result.status.value == "succeeded":
-        output = result.output or {}
         return demo_page(
             task,
-            __import__("json").dumps(output, ensure_ascii=False, indent=2),
+            json.dumps(result.output or {}, ensure_ascii=False, indent=2),
             meta=f"Execution ID: {result.id} · Status: {result.status.value} · Attempts: {result.attempts}",
         )
 
@@ -67,7 +69,7 @@ async def demo_run(task: str = Form("")) -> str:
     }
     return demo_page(
         task,
-        __import__("json").dumps(details, ensure_ascii=False, indent=2),
+        json.dumps(details, ensure_ascii=False, indent=2),
         meta=f"Execution ID: {result.id} · Status: {result.status.value} · Attempts: {result.attempts}",
         error=True,
     )
@@ -88,7 +90,7 @@ def demo_page(task: str, result: str = "", meta: str = "", error: bool = False) 
 <body><main class="card">
 <span class="badge">AUTOMATION ENGINE · DEMO</span>
 <h1 class="title">Automate a task.</h1>
-<p class="sub">This demo uses a normal HTML form, so execution works even when browser JavaScript is unavailable.</p>
+<p class="sub">This demo uses a standard HTML form, so it works without browser JavaScript.</p>
 <form method="post" action="/demo/run">
 <div class="label">YOUR TASK</div>
 <textarea id="task" name="task">{escape(task)}</textarea>
