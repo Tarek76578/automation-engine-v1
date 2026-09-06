@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Protocol
 
 from cryptography.fernet import Fernet, InvalidToken
@@ -111,7 +111,7 @@ class PostgresCredentialStore:
 
     async def save(self, page_id: str, page_name: str, page_access_token: str) -> None:
         await self.initialize()
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         ciphertext = self._codec.encrypt(page_access_token)
         async with self.sessions() as session:
             row = await session.get(MetaCredentialRow, "default")
