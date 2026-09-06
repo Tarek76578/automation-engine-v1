@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 
 from app.core.agent_runtime import agent_runtime
@@ -22,7 +22,10 @@ _meta_orchestrator = ExecutionOrchestrator(execution_repository, queue, agent_ru
 
 
 @router.get("/oauth/start")
-async def meta_oauth_start() -> dict[str, str]:
+async def meta_oauth_start(response: Response) -> dict[str, str]:
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
     try:
         url, _ = await meta_oauth_manager.authorization_url()
     except MetaOAuthError as exc:
@@ -31,7 +34,12 @@ async def meta_oauth_start() -> dict[str, str]:
 
 
 @router.get("/oauth/callback")
-async def meta_oauth_callback(code: str = "", state: str = "", error: str = "") -> dict[str, object]:
+async def meta_oauth_callback(
+    response: Response, code: str = "", state: str = "", error: str = ""
+) -> dict[str, object]:
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
     if error:
         raise HTTPException(status_code=400, detail=f"Meta OAuth denied: {error}")
     try:
