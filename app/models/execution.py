@@ -34,5 +34,6 @@ class Execution(BaseModel):
     approval_decided_at: datetime | None = None
     approval_decided_by: str | None = Field(default=None, max_length=200)
     approval_decision: str | None = Field(default=None, max_length=32)
+    approval_token: str | None = Field(default=None, exclude=True, repr=False)
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
