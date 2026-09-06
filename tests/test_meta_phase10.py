@@ -1,5 +1,6 @@
 import hashlib
 import hmac
+from datetime import UTC, datetime, timedelta
 from urllib.parse import parse_qs, urlparse
 
 import pytest
@@ -54,6 +55,7 @@ def test_missing_production_encryption_key_disables_credential_store(monkeypatch
 class MemoryStore:
     def __init__(self):
         self.value = None
+        self.states = {}
 
     async def initialize(self):
         return None
@@ -68,6 +70,13 @@ class MemoryStore:
     async def load(self):
         return dict(self.value) if self.value else None
 
+    async def save_oauth_state(self, state_hash, expires_at):
+        self.states[state_hash] = expires_at
+
+    async def consume_oauth_state(self, state_hash, now):
+        expires_at = self.states.pop(state_hash, None)
+        return expires_at is not None and expires_at >= now
+
 
 @pytest.mark.asyncio
 async def test_meta_oauth_uses_login_for_business_config(monkeypatch):
@@ -78,7 +87,7 @@ async def test_meta_oauth_uses_login_for_business_config(monkeypatch):
     manager = MetaOAuthManager(MemoryStore())
     await manager.initialize()
 
-    url, _ = manager.authorization_url()
+    url, _ = await manager.authorization_url()
     query = parse_qs(urlparse(url).query)
     assert query["client_id"] == ["app-id"]
     assert query["redirect_uri"] == ["https://example.com/api/meta/oauth/callback"]
@@ -98,7 +107,7 @@ async def test_meta_oauth_persists_credentials_in_store(monkeypatch):
     store = MemoryStore()
     manager = MetaOAuthManager(store)
     await manager.initialize()
-    url, state = manager.authorization_url()
+    url, state = await manager.authorization_url()
     assert "client_id=app-id" in url
 
     class Response:
@@ -130,6 +139,22 @@ async def test_meta_oauth_persists_credentials_in_store(monkeypatch):
     assert manager.credentials()["page_access_token"] == "page-token"
     with pytest.raises(MetaOAuthError, match="Invalid or expired"):
         await manager.callback("code-2", state)
+
+
+@pytest.mark.asyncio
+async def test_meta_oauth_state_expires(monkeypatch):
+    monkeypatch.setattr(settings, "meta_app_id", "app-id")
+    monkeypatch.setattr(settings, "meta_app_secret", "app-secret")
+    monkeypatch.setattr(settings, "meta_redirect_uri", "https://example.com/api/meta/oauth/callback")
+    monkeypatch.setattr(settings, "meta_oauth_config_id", "947332841072287")
+    store = MemoryStore()
+    manager = MetaOAuthManager(store)
+    await manager.initialize()
+    _, state = await manager.authorization_url()
+    state_hash = hashlib.sha256(state.encode()).hexdigest()
+    store.states[state_hash] = datetime.now(UTC) - timedelta(seconds=1)
+    with pytest.raises(MetaOAuthError, match="Invalid or expired"):
+        await manager.callback("code-1", state)
 
 
 @pytest.mark.asyncio
