@@ -58,3 +58,6 @@ def parse_page_messenger_events(payload: dict[str, Any]) -> list[dict[str, Any]]
         event["event_id"] = event["message_id"] or stable_event_id(page_id, event)
         events.append(event)
     return events
+
+
+# CI trigger marker: preserve Messenger event identity behavior unchanged.
