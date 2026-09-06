@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import JSON, DateTime, String, select, text
+from sqlalchemy import DateTime, String, select
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -77,17 +77,12 @@ class PostgresMessengerMemory:
         await self._ensure_schema()
         async with self.sessions() as session:
             if message.event_id:
-                existing = await session.execute(
-                    select(MessengerMessageRow.id).where(MessengerMessageRow.event_id == message.event_id)
-                )
+                existing = await session.execute(select(MessengerMessageRow.id).where(MessengerMessageRow.event_id == message.event_id))
                 if existing.scalar_one_or_none() is not None:
                     return False
             row = MessengerMessageRow(
-                conversation_key=message.conversation_key,
-                direction=message.direction,
-                sender_id=message.sender_id,
-                message=message.message,
-                event_id=message.event_id,
+                conversation_key=message.conversation_key, direction=message.direction,
+                sender_id=message.sender_id, message=message.message, event_id=message.event_id,
                 created_at=message.created_at or datetime.now(UTC),
             )
             session.add(row)
@@ -96,9 +91,7 @@ class PostgresMessengerMemory:
             except Exception:
                 await session.rollback()
                 if message.event_id:
-                    existing = await session.execute(
-                        select(MessengerMessageRow.id).where(MessengerMessageRow.event_id == message.event_id)
-                    )
+                    existing = await session.execute(select(MessengerMessageRow.id).where(MessengerMessageRow.event_id == message.event_id))
                     if existing.scalar_one_or_none() is not None:
                         return False
                 raise
@@ -115,10 +108,7 @@ class PostgresMessengerMemory:
                 .limit(safe_limit)
             )
             rows = list(result.scalars())
-        return [
-            ConversationMessage(row.conversation_key, row.direction, row.sender_id, row.message, row.event_id, row.created_at)
-            for row in reversed(rows)
-        ]
+        return [ConversationMessage(row.conversation_key, row.direction, row.sender_id, row.message, row.event_id, row.created_at) for row in reversed(rows)]
 
 
 class MessengerMemory:
