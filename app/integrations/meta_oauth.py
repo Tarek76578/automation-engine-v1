@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
 import secrets
 import time
 from dataclasses import dataclass
@@ -25,7 +26,7 @@ class OAuthState:
 
 
 class MetaOAuthManager:
-    """OAuth onboarding with one-time state and durable encrypted Page credentials."""
+    """OAuth onboarding with signed restart-safe state and durable credentials."""
 
     REQUIRED_SCOPES = (
         "pages_show_list",
@@ -33,9 +34,11 @@ class MetaOAuthManager:
         "pages_manage_posts",
         "pages_messaging",
     )
+    STATE_TTL_SECONDS = 600
 
     def __init__(self, credential_store: CredentialStore | None = None) -> None:
         self._states: dict[str, OAuthState] = {}
+        self._consumed_state_hashes: set[str] = set()
         self._credentials: dict[str, dict[str, str]] = {}
         self._store = credential_store or build_meta_credential_store()
         self._storage_error: str | None = None
@@ -59,8 +62,9 @@ class MetaOAuthManager:
 
     async def authorization_url(self) -> tuple[str, str]:
         self._require_ready()
-        state = secrets.token_urlsafe(32)
-        expires_at = time.time() + 600
+        expires_at = time.time() + self.STATE_TTL_SECONDS
+        nonce = secrets.token_urlsafe(24)
+        state = self._sign_state(int(expires_at), nonce)
         state_hash = self._digest(state)
         try:
             await self._store.save_oauth_state(state_hash, datetime.fromtimestamp(expires_at, UTC))
@@ -121,13 +125,43 @@ class MetaOAuthManager:
         if not state.strip():
             raise MetaOAuthError("Invalid or expired Meta OAuth state")
         state_hash = self._digest(state)
+        if state_hash in self._consumed_state_hashes:
+            raise MetaOAuthError("Invalid or expired Meta OAuth state")
         try:
             consumed = await self._store.consume_oauth_state(state_hash, datetime.now(UTC))
         except MetaCredentialError as exc:
             raise MetaOAuthError(str(exc)) from exc
-        self._states.pop(state_hash, None)
-        if not consumed:
+        if consumed:
+            self._states.pop(state_hash, None)
+            self._consumed_state_hashes.add(state_hash)
+            return
+        if not self._verify_signed_state(state):
             raise MetaOAuthError("Invalid or expired Meta OAuth state")
+        self._states.pop(state_hash, None)
+        self._consumed_state_hashes.add(state_hash)
+
+    def _sign_state(self, expires_at: int, nonce: str) -> str:
+        payload = f"v1.{expires_at}.{nonce}"
+        signature = hmac.new(
+            settings.meta_app_secret.encode("utf-8"), payload.encode("utf-8"), hashlib.sha256
+        ).hexdigest()
+        return f"{payload}.{signature}"
+
+    def _verify_signed_state(self, state: str) -> bool:
+        try:
+            version, expires_text, nonce, signature = state.split(".", 3)
+            if version != "v1" or not nonce or not expires_text.isdigit():
+                return False
+            expires_at = int(expires_text)
+            if expires_at < int(time.time()):
+                return False
+            payload = f"{version}.{expires_at}.{nonce}"
+            expected = hmac.new(
+                settings.meta_app_secret.encode("utf-8"), payload.encode("utf-8"), hashlib.sha256
+            ).hexdigest()
+            return hmac.compare_digest(signature, expected)
+        except (TypeError, ValueError):
+            return False
 
     async def _exchange_code(self, code: str) -> str:
         result = await self._request("GET", "/oauth/access_token", {"client_id": settings.meta_app_id, "client_secret": settings.meta_app_secret, "redirect_uri": settings.meta_redirect_uri, "code": code})
