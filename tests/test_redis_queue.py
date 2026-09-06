@@ -85,6 +85,24 @@ async def test_ack_after_recovery_cannot_resurrect_job(redis_queue: RedisQueue) 
 
 
 @pytest.mark.asyncio
+async def test_stale_dead_letter_after_recovery_cannot_mutate_queue(redis_queue: RedisQueue) -> None:
+    job = Job(execution_id=uuid4())
+    await redis_queue.enqueue(job)
+    first = await redis_queue.dequeue()
+    await asyncio.sleep(1.1)
+
+    assert await redis_queue.recover() == 1
+    await redis_queue.dead_letter(first, "stale-worker")
+
+    assert await redis_queue.redis.llen(redis_queue.dead_letter_key) == 0
+    assert await redis_queue.redis.llen(redis_queue.key) == 1
+
+    recovered = await redis_queue.dequeue()
+    assert recovered.job_id == job.job_id
+    await redis_queue.ack(recovered)
+
+
+@pytest.mark.asyncio
 async def test_processing_job_without_claim_is_recovered(redis_queue: RedisQueue) -> None:
     job = Job(execution_id=uuid4())
     raw = redis_queue._encode(job)
