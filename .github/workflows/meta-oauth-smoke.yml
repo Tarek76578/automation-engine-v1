@@ -8,7 +8,7 @@ jobs:
   meta-oauth-smoke:
     runs-on: ubuntu-latest
     steps:
-      - name: Verify live Meta OAuth start endpoint
+      - name: Verify live Meta OAuth start and callback endpoints
         shell: bash
         run: |
           set -euo pipefail
@@ -89,7 +89,25 @@ jobs:
               exit 1
             fi
 
-            echo "Live Meta OAuth start smoke passed: signed state generated, cache disabled, and consecutive states are unique."
+            tampered_state="${state}x"
+            callback_body=$(mktemp)
+            callback_code=$(curl -sS -o "$callback_body" -w '%{http_code}' --get \
+              --data-urlencode "code=dummy-code" \
+              --data-urlencode "state=$tampered_state" \
+              "$base/api/meta/oauth/callback" || true)
+            echo "Tampered OAuth callback HTTP status: $callback_code"
+            if [[ "$callback_code" != "400" ]]; then
+              echo "Tampered OAuth state was not rejected with HTTP 400"
+              cat "$callback_body"
+              exit 1
+            fi
+            if ! grep -q 'Invalid or expired Meta OAuth state' "$callback_body"; then
+              echo "Tampered OAuth callback returned an unexpected error"
+              cat "$callback_body"
+              exit 1
+            fi
+
+            echo "Live Meta OAuth smoke passed: signed state generated, cache disabled, states are unique, and tampered callback state is rejected."
             exit 0
           done
 
