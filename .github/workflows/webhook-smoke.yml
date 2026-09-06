@@ -23,7 +23,7 @@ jobs:
 
             response=$(curl -fsS -X POST https://automation-engine-demo.onrender.com/api/executions \
               -H 'Content-Type: application/json' \
-              --data '{"workflow":"demo","input":{"webhook_url":"https://postman-echo.com/post","webhook_payload":{"source":"automation-engine","test":"codespaces-demo-fixed-v3"}}}')
+              --data '{"workflow":"demo","input":{"webhook_url":"https://postman-echo.com/post","webhook_payload":{"source":"automation-engine","test":"codespaces-demo-fixed-v4"}}}')
             echo "Create response: $response"
             execution_id=$(echo "$response" | jq -r '.id')
             if [[ -z "$execution_id" || "$execution_id" == "null" ]]; then
@@ -36,10 +36,21 @@ jobs:
               -H 'Content-Type: application/json')
             echo "Run response: $run_response"
 
-            status=$(echo "$run_response" | jq -r '.status')
-            verified=$(echo "$run_response" | jq -r '.output.execution.verified // false')
-            action=$(echo "$run_response" | jq -r '.output.execution.action // ""')
-            error=$(echo "$run_response" | jq -r '.error // ""')
+            status=$(echo "$run_response" | jq -r '.execution.status // .status // ""')
+            approval_token=$(echo "$run_response" | jq -r '.approval_token // ""')
+
+            if [[ "$status" == "waiting_approval" && -n "$approval_token" ]]; then
+              echo "Execution requires approval; approving the smoke-test execution"
+              run_response=$(curl -fsS -X POST "https://automation-engine-demo.onrender.com/api/executions/$execution_id/approval/approve" \
+                -H 'Content-Type: application/json' \
+                --data "$(jq -cn --arg token "$approval_token" '{token:$token,decided_by:"github-actions-smoke"}')")
+              echo "Approval response: $run_response"
+            fi
+
+            status=$(echo "$run_response" | jq -r '.execution.status // .status // ""')
+            verified=$(echo "$run_response" | jq -r '.execution.output.execution.verified // .output.execution.verified // false')
+            action=$(echo "$run_response" | jq -r '.execution.output.execution.action // .output.execution.action // ""')
+            error=$(echo "$run_response" | jq -r '.execution.error // .error // ""')
 
             if [[ "$status" == "succeeded" && "$verified" == "true" && "$action" == "webhook" ]]; then
               echo "Render -> HTTPS webhook -> 2xx verification passed"
