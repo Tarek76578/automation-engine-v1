@@ -10,7 +10,7 @@ from app.core.config import settings
 from app.core.job_queue import queue
 from app.core.orchestrator import ExecutionOrchestrator
 from app.core.persistence import execution_repository
-from app.integrations.meta import meta_graph_client, verify_webhook_signature
+from app.integrations.meta import MetaGraphError, meta_graph_client, verify_webhook_signature
 from app.integrations.meta_messenger import parse_page_messenger_events
 from app.integrations.meta_oauth import MetaOAuthError, meta_oauth_manager
 from app.integrations.messenger_memory import messenger_memory
@@ -62,6 +62,18 @@ async def meta_oauth_status() -> dict[str, object]:
         "page_id": credentials.get("page_id") if credentials else None,
         "page_name": credentials.get("page_name") if credentials else None,
     }
+
+
+@router.get("/page")
+async def meta_page_info() -> dict[str, object]:
+    credentials = meta_oauth_manager.credentials()
+    if not credentials:
+        raise HTTPException(status_code=503, detail="Meta page is not connected")
+    meta_graph_client.configure(credentials["page_id"], credentials["page_access_token"])
+    try:
+        return await meta_graph_client.page_info()
+    except MetaGraphError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
 @router.get("/webhook")
