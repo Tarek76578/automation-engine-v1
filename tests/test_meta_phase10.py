@@ -1,6 +1,6 @@
 import hashlib
 import hmac
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from urllib.parse import parse_qs, urlparse
 
 import pytest
@@ -192,11 +192,9 @@ async def test_meta_oauth_state_expires(monkeypatch):
     store = MemoryStore()
     manager = MetaOAuthManager(store)
     await manager.initialize()
-    _, state = await manager.authorization_url()
-    state_hash = hashlib.sha256(state.encode()).hexdigest()
-    store.states[state_hash] = datetime.now(UTC) - timedelta(seconds=1)
+    expired_state = manager._sign_state(int(datetime.now(UTC).timestamp()) - 1, "expired-nonce")
     with pytest.raises(MetaOAuthError, match="Invalid or expired"):
-        await manager.callback("code-1", state)
+        await manager.callback("code-1", expired_state)
 
 
 @pytest.mark.asyncio
