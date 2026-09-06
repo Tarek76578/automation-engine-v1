@@ -77,7 +77,7 @@ async def test_meta_oauth_persists_credentials_in_store(monkeypatch):
     store = MemoryStore()
     manager = MetaOAuthManager(store)
     await manager.initialize()
-    url, state = manager.authorization_url()
+    url, state = await manager.authorization_url()
     assert "client_id=app-id" in url
 
     class Response:
