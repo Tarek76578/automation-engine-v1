@@ -1,7 +1,9 @@
+from dataclasses import asdict
+
 import pytest
 
 from app.core.planner import AgentPlanner
-from app.integrations.messenger_memory import InMemoryMessengerMemory, conversation_key
+from app.integrations.messenger_memory import ConversationMessage, InMemoryMessengerMemory, conversation_key
 
 
 class CaptureProvider:
@@ -21,11 +23,12 @@ class CaptureProvider:
 
 @pytest.mark.asyncio
 async def test_phase12_memory_to_planner_context_smoke():
-    memory = InMemoryMessengerMemory(max_messages=12)
+    memory = InMemoryMessengerMemory(max_messages_per_conversation=12)
     key = conversation_key("page-1", "customer-1")
+    inbound = ConversationMessage(key, "inbound", "customer-1", "لدي سيارة Peugeot 208", "event-1")
 
-    assert await memory.append(key, "inbound", "customer-1", "لدي سيارة Peugeot 208", "event-1")
-    assert not await memory.append(key, "inbound", "customer-1", "لدي سيارة Peugeot 208", "event-1")
+    assert await memory.append(inbound)
+    assert not await memory.append(inbound)
 
     context = await memory.recent(key, limit=12)
     assert len(context) == 1
@@ -37,7 +40,7 @@ async def test_phase12_memory_to_planner_context_smoke():
         {
             "message": "هل تتذكر سيارتي؟",
             "recipient_id": "customer-1",
-            "conversation_context": [item.model_dump() for item in context],
+            "conversation_context": [asdict(item) for item in context],
         }
     )
 
@@ -47,7 +50,10 @@ async def test_phase12_memory_to_planner_context_smoke():
     assert plan.steps[0].action == "meta_page_reply"
     assert plan.steps[0].parameters["recipient_id"] == "customer-1"
 
-    assert await memory.append(key, "outbound", "page-1", plan.steps[0].parameters["message"], "execution:smoke-1")
+    outbound = ConversationMessage(
+        key, "outbound", "page-1", plan.steps[0].parameters["message"], "execution:smoke-1"
+    )
+    assert await memory.append(outbound)
     final_context = await memory.recent(key, limit=12)
     assert [item.direction for item in final_context] == ["inbound", "outbound"]
     assert "Peugeot 208" in final_context[-1].message
