@@ -118,7 +118,12 @@ class PostgresCredentialStore:
 
     def __init__(self, database_url: str, encryption_key: str) -> None:
         self._codec = EncryptedCredentialCodec(encryption_key)
-        self.engine: AsyncEngine = create_async_engine(database_url, pool_pre_ping=True)
+        async_database_url = database_url
+        if async_database_url.startswith("postgresql://"):
+            async_database_url = "postgresql+asyncpg://" + async_database_url[len("postgresql://"):]
+        elif async_database_url.startswith("postgres://"):
+            async_database_url = "postgresql+asyncpg://" + async_database_url[len("postgres://"):]
+        self.engine: AsyncEngine = create_async_engine(async_database_url, pool_pre_ping=True)
         self.sessions = async_sessionmaker(self.engine, expire_on_commit=False)
         self._schema_ready = False
 
