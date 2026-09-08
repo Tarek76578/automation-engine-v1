@@ -10,6 +10,17 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from app.models.execution import Execution, ExecutionStatus
 
 
+def _async_database_url(database_url: str) -> str:
+    """Use the asyncpg SQLAlchemy dialect for generic PostgreSQL URLs."""
+    if database_url.startswith("postgresql+asyncpg://"):
+        return database_url
+    if database_url.startswith("postgresql://"):
+        return "postgresql+asyncpg://" + database_url[len("postgresql://"):]
+    if database_url.startswith("postgres://"):
+        return "postgresql+asyncpg://" + database_url[len("postgres://"):]
+    return database_url
+
+
 class Base(DeclarativeBase):
     pass
 
@@ -37,7 +48,7 @@ class ExecutionRow(Base):
 
 class PostgresExecutionRepository:
     def __init__(self, database_url: str) -> None:
-        self.engine: AsyncEngine = create_async_engine(database_url, pool_pre_ping=True)
+        self.engine: AsyncEngine = create_async_engine(_async_database_url(database_url), pool_pre_ping=True)
         self.sessions = async_sessionmaker(self.engine, expire_on_commit=False)
         self._schema_ready = False
 
