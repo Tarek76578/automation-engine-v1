@@ -102,18 +102,26 @@ class RuleEngine:
     def _condition(self, condition: Any, data: dict[str, Any]) -> bool:
         if not isinstance(condition, dict):
             raise ValueError("condition must be an object")
-        if "all" in condition:
-            values = condition["all"]
+
+        # Pydantic models may serialize optional recursive group fields as
+        # explicit nulls. Treat those unset fields as absent so a leaf
+        # condition such as {field, operator, value} is evaluated normally.
+        values = condition.get("all")
+        if values is not None:
             if not isinstance(values, list):
                 raise ValueError("all condition group must be a list")
             return all(self._condition(item, data) for item in values)
-        if "any" in condition:
-            values = condition["any"]
+
+        values = condition.get("any")
+        if values is not None:
             if not isinstance(values, list):
                 raise ValueError("any condition group must be a list")
             return any(self._condition(item, data) for item in values)
-        if "not" in condition:
-            return not self._condition(condition["not"], data)
+
+        not_value = condition.get("not")
+        if not_value is not None:
+            return not self._condition(not_value, data)
+
         field = str(condition.get("field", ""))
         operator = str(condition.get("operator", "equals"))
         if operator not in self.OPERATORS:
