@@ -1,4 +1,5 @@
 import asyncio
+from uuid import uuid4
 
 import pytest
 
@@ -31,13 +32,21 @@ class FakeQueue:
 async def test_worker_processes_and_acks_job(monkeypatch) -> None:
     from app import worker
 
-    job = Job(execution_id=__import__("uuid").uuid4())
+    job = Job(execution_id=uuid4())
     queue = FakeQueue(job)
     processed: list[str] = []
 
     async def process(execution_id: str):
         processed.append(execution_id)
-        return type("Result", (), {"id": job.execution_id, "status": type("Status", (), {"value": "succeeded"})(), "attempts": 1})()
+        return type(
+            "Result",
+            (),
+            {
+                "id": job.execution_id,
+                "status": type("Status", (), {"value": "succeeded"})(),
+                "attempts": 1,
+            },
+        )()
 
     monkeypatch.setattr(worker, "queue", queue)
     monkeypatch.setattr(worker.orchestrator, "process", process)
