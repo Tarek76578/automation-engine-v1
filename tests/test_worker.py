@@ -1,3 +1,5 @@
+import asyncio
+
 import pytest
 
 from app.core.job_queue import Job
@@ -17,7 +19,7 @@ class FakeQueue:
 
     async def dequeue(self) -> Job:
         if self.dequeued:
-            raise RuntimeError("stop worker test")
+            raise asyncio.CancelledError
         self.dequeued = True
         return self.job
 
@@ -40,7 +42,7 @@ async def test_worker_processes_and_acks_job(monkeypatch) -> None:
     monkeypatch.setattr(worker, "queue", queue)
     monkeypatch.setattr(worker.orchestrator, "process", process)
 
-    with pytest.raises(RuntimeError, match="stop worker test"):
+    with pytest.raises(asyncio.CancelledError):
         await worker.run_worker()
 
     assert processed == [str(job.execution_id)]
