@@ -93,11 +93,23 @@ class AgentRuntime:
 
     def _rule_plan(self, task: AgentTask) -> dict[str, Any]:
         plan = self.rule_engine.plan(task.input)
-        first = plan.steps[0]
+        steps = plan.steps
+        if len(steps) == 1:
+            action = steps[0].action
+        else:
+            # Keep the existing orchestrator contract while executing every
+            # deterministic rule action sequentially inside ActionExecutor.
+            steps[0].parameters = {
+                "actions": [
+                    {"action": step.action, "parameters": step.parameters, "reason": step.reason}
+                    for step in steps
+                ]
+            }
+            action = "sequence"
         return {
             "status": "planned_and_executed",
             "planner": "rules",
-            "action": first.action,
+            "action": action,
             "summary": plan.goal,
             "input": task.input,
             "workflow": task.input.get("workflow", "demo"),
