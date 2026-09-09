@@ -10,9 +10,9 @@ class RuleCondition(BaseModel):
     field: str | None = None
     operator: str | None = None
     value: Any = None
-    all: list["RuleCondition"] | None = None
-    any: list["RuleCondition"] | None = None
-    not_: "RuleCondition" | None = Field(default=None, alias="not")
+    all: list[RuleCondition] | None = None
+    any: list[RuleCondition] | None = None
+    not_: RuleCondition | None = Field(default=None, alias="not")
 
     model_config = {"populate_by_name": True}
 
