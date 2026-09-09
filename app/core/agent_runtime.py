@@ -44,7 +44,6 @@ class AgentRuntime:
         if definition is None:
             raise ValueError(f"Unknown agent: {task.agent}")
 
-        # Explicit rules are deterministic and never call an LLM.
         if isinstance(task.input.get("rules"), list):
             output = self._rule_plan(task)
             return AgentResult(task_id=task.id, output=output, provider="local", model="rule-engine-v1")
@@ -72,12 +71,9 @@ class AgentRuntime:
                     planner = AgentPlanner(provider=provider, model=route.model)
                     plan = await planner.plan(task.input, definition.system_prompt)
                     output = {
-                        "status": "planned_and_executed",
-                        "planner": "llm",
-                        "plan": plan.model_dump(mode="json"),
-                        "action": plan.steps[0].action,
-                        "summary": plan.goal,
-                        "input": task.input,
+                        "status": "planned_and_executed", "planner": "llm",
+                        "plan": plan.model_dump(mode="json"), "action": plan.steps[0].action,
+                        "summary": plan.goal, "input": task.input,
                         "workflow": task.input.get("workflow", "demo"),
                     }
                     provider_name = definition.provider or route.provider
@@ -93,28 +89,18 @@ class AgentRuntime:
 
     def _rule_plan(self, task: AgentTask) -> dict[str, Any]:
         plan = self.rule_engine.plan(task.input)
-        steps = plan.steps
-        if len(steps) == 1:
-            action = steps[0].action
-        else:
-            # Keep the existing orchestrator contract while executing every
-            # deterministic rule action sequentially inside ActionExecutor.
-            steps[0].parameters = {
-                "actions": [
-                    {"action": step.action, "parameters": step.parameters, "reason": step.reason}
-                    for step in steps
-                ]
-            }
-            action = "sequence"
+        sequence = [
+            {"action": step.action, "parameters": step.parameters, "reason": step.reason}
+            for step in plan.steps
+        ]
+        action = plan.steps[0].action if len(sequence) == 1 else "sequence"
         return {
-            "status": "planned_and_executed",
-            "planner": "rules",
-            "action": action,
-            "summary": plan.goal,
-            "input": task.input,
+            "status": "planned_and_executed", "planner": "rules", "action": action,
+            "summary": plan.goal, "input": task.input,
             "workflow": task.input.get("workflow", "demo"),
             "steps": ["match_trigger", "evaluate_conditions", "create_plan", "execute_action", "verify_result"],
             "plan": plan.model_dump(mode="json"),
+            "sequence": sequence,
         }
 
     @staticmethod
@@ -130,11 +116,8 @@ class AgentRuntime:
         plan = planner._local_plan(task.input)
         first = plan.steps[0]
         return {
-            "status": "planned_and_executed",
-            "planner": "local",
-            "action": first.action,
-            "summary": plan.goal,
-            "input": task.input,
+            "status": "planned_and_executed", "planner": "local", "action": first.action,
+            "summary": plan.goal, "input": task.input,
             "workflow": task.input.get("workflow", "demo"),
             "steps": ["understand_request", "create_plan", "execute_action", "verify_result"],
             "plan": plan.model_dump(mode="json"),
@@ -152,14 +135,12 @@ elif settings.openai_api_key:
 else:
     default_provider, default_model = None, None
 
-registry.register(
-    AgentDefinition(
-        name=settings.default_agent,
-        system_prompt="You are the default automation agent. Return a safe, structured execution plan.",
-        provider=default_provider,
-        model=default_model,
-    )
-)
+registry.register(AgentDefinition(
+    name=settings.default_agent,
+    system_prompt="You are the default automation agent. Return a safe, structured execution plan.",
+    provider=default_provider,
+    model=default_model,
+))
 
 providers: dict[str, LLMProvider] = {}
 if settings.ollama_base_url:
