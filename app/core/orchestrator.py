@@ -10,13 +10,7 @@ from app.core.agent_runtime import AgentRuntime
 from app.core.approval import approval_manager
 from app.core.config import settings
 from app.core.job_queue import Job, Queue
-from app.core.observability import (
-    ACTIONS_TOTAL,
-    EXECUTIONS_TOTAL,
-    EXECUTION_DURATION_SECONDS,
-    EXECUTION_RETRIES_TOTAL,
-    IDEMPOTENCY_HITS_TOTAL,
-)
+from app.core.observability import ACTIONS_TOTAL, EXECUTIONS_TOTAL, EXECUTION_DURATION_SECONDS, EXECUTION_RETRIES_TOTAL, IDEMPOTENCY_HITS_TOTAL
 from app.core.persistence import ExecutionRepository
 from app.core.state_machine import transition
 from app.integrations.n8n import N8nClient
@@ -44,6 +38,8 @@ class ExecutionOrchestrator:
 
     @staticmethod
     def _action_payload(output: dict[str, Any], task_input: dict[str, Any]) -> dict[str, Any]:
+        if output.get("action") == "sequence" and isinstance(output.get("sequence"), list):
+            return {"actions": output["sequence"]}
         plan = output.get("plan")
         if isinstance(plan, dict):
             steps = plan.get("steps")
@@ -110,12 +106,7 @@ class ExecutionOrchestrator:
                 execution.approval_decided_at = None
                 execution.approval_decided_by = None
                 execution.approval_decision = None
-                output["approval"] = {
-                    "required": True,
-                    "status": "awaiting_approval",
-                    "reason": plan.get("approval_reason", "Sensitive operation requires approval."),
-                    "expires_at": expires_at.isoformat(),
-                }
+                output["approval"] = {"required": True, "status": "awaiting_approval", "reason": plan.get("approval_reason", "Sensitive operation requires approval."), "expires_at": expires_at.isoformat()}
                 execution.approval_token = token
                 execution.output = output
                 execution.error = None
@@ -143,12 +134,7 @@ class ExecutionOrchestrator:
                 raise RuntimeError(f"action '{action}' could not be verified")
 
             if execution.approval_decision == "approved":
-                output["approval"] = {
-                    "required": True,
-                    "status": "approved",
-                    "approved_at": execution.approval_decided_at.isoformat() if execution.approval_decided_at else None,
-                    "approved_by": execution.approval_decided_by,
-                }
+                output["approval"] = {"required": True, "status": "approved", "approved_at": execution.approval_decided_at.isoformat() if execution.approval_decided_at else None, "approved_by": execution.approval_decided_by}
 
             transition(execution, ExecutionStatus.succeeded)
             execution.output = output
@@ -260,12 +246,7 @@ class ExecutionOrchestrator:
                 if self.n8n is None:
                     raise RuntimeError("n8n webhook requested but N8nClient is not configured")
                 output["n8n"] = await self.n8n.trigger_webhook(str(webhook), {"execution_id": str(execution.id), "output": output})
-            output["approval"] = {
-                "required": True,
-                "status": "approved",
-                "approved_at": execution.approval_decided_at.isoformat() if execution.approval_decided_at else None,
-                "approved_by": execution.approval_decided_by,
-            }
+            output["approval"] = {"required": True, "status": "approved", "approved_at": execution.approval_decided_at.isoformat() if execution.approval_decided_at else None, "approved_by": execution.approval_decided_by}
             transition(execution, ExecutionStatus.succeeded)
             execution.output = output
             execution.error = None
