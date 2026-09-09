@@ -72,8 +72,7 @@ async def receive_webhook(
     if x_webhook_id:
         idempotency_key = f"webhook:{rule.id}:{x_webhook_id[:200]}"
 
-    # Import the module rather than copying the object so tests and runtime
-    # configuration can replace the orchestrator safely.
+    # Resolve the module at request time so test/runtime monkeypatches are honored.
     from app.api import executions as executions_api
 
     saved = await executions_api.orchestrator.submit(execution, idempotency_key)
