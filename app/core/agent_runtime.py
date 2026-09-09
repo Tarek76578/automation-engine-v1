@@ -6,6 +6,7 @@ from typing import Any
 from app.core.config import settings
 from app.core.planner import AgentPlanner
 from app.core.router import LLMRouter
+from app.core.rule_engine import RuleEngine
 from app.models.agent import AgentDefinition, AgentResult, AgentTask
 from app.providers.base import LLMProvider
 from app.providers.ollama import OllamaProvider
@@ -36,11 +37,17 @@ class AgentRuntime:
         self.registry = registry
         self.router = router
         self.providers = providers or {}
+        self.rule_engine = RuleEngine()
 
     async def execute_async(self, task: AgentTask) -> AgentResult:
         definition = self.registry.get(task.agent)
         if definition is None:
             raise ValueError(f"Unknown agent: {task.agent}")
+
+        # Explicit rules are deterministic and never call an LLM.
+        if isinstance(task.input.get("rules"), list):
+            output = self._rule_plan(task)
+            return AgentResult(task_id=task.id, output=output, provider="local", model="rule-engine-v1")
 
         if task.input.get("webhook_url"):
             output = self._local_plan(task)
@@ -83,6 +90,20 @@ class AgentRuntime:
                     provider_name = "local-fallback"
                     model_name = "automation-planner-v1"
         return AgentResult(task_id=task.id, output=output, provider=provider_name, model=model_name)
+
+    def _rule_plan(self, task: AgentTask) -> dict[str, Any]:
+        plan = self.rule_engine.plan(task.input)
+        first = plan.steps[0]
+        return {
+            "status": "planned_and_executed",
+            "planner": "rules",
+            "action": first.action,
+            "summary": plan.goal,
+            "input": task.input,
+            "workflow": task.input.get("workflow", "demo"),
+            "steps": ["match_trigger", "evaluate_conditions", "create_plan", "execute_action", "verify_result"],
+            "plan": plan.model_dump(mode="json"),
+        }
 
     @staticmethod
     def _is_rate_limit_error(exc: Exception) -> bool:
