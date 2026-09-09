@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     ollama_model: str = "llama3.2:3b"
     default_agent: str = "automation"
     action_webhook_allowlist: str = ""
+    inbound_webhook_secret: str = ""
     meta_page_id: str = ""
     meta_page_access_token: str = ""
     meta_graph_api_version: str = "v23.0"
