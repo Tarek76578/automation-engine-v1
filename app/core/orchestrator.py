@@ -4,6 +4,7 @@ import logging
 from datetime import UTC, datetime
 from time import monotonic
 from typing import Any
+from uuid import UUID
 
 from app.core.action_executor import action_executor
 from app.core.agent_runtime import AgentRuntime
@@ -56,9 +57,10 @@ class ExecutionOrchestrator:
         rule_id = task_input.get("rule_id") or execution.input.get("rule_id")
         if rule_id:
             try:
-                rule = await rule_store.get(__import__("uuid").UUID(str(rule_id)))
-            except (ValueError, TypeError):
-                raise ValueError("rule_id must be a valid UUID") from None
+                rule_uuid = UUID(str(rule_id))
+            except (ValueError, TypeError) as exc:
+                raise ValueError("rule_id must be a valid UUID") from exc
+            rule = await rule_store.get(rule_uuid)
             if rule is None:
                 raise ValueError("rule not found")
             task_input["rules"] = [rule.model_dump(mode="json", by_alias=True)]
@@ -224,7 +226,6 @@ class ExecutionOrchestrator:
         execution.approval_decided_at = now
         execution.approval_token_hash = None
         execution.approval_expires_at = None
-        execution.approval_requested_at = execution.approval_requested_at
         execution.approval_token = None
         execution.error = "execution rejected by approver"
         transition(execution, ExecutionStatus.failed)
