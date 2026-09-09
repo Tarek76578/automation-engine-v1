@@ -58,8 +58,8 @@ async def receive_webhook(
         "event_type": event.get("type"),
         "rule_id": str(rule.id),
     }
-    rule_data = rule.model_dump(mode="json", by_alias=True)
-    task_input["rules"] = [rule_data]
+    task_input["rules"] = [rule.model_dump(mode="json", by_alias=True)]
+
     plan = engine.plan(task_input)
     if plan.goal != rule.name:
         raise HTTPException(
@@ -72,13 +72,16 @@ async def receive_webhook(
     if x_webhook_id:
         idempotency_key = f"webhook:{rule.id}:{x_webhook_id[:200]}"
 
-    from app.api.executions import orchestrator
+    # Import the module rather than copying the object so tests and runtime
+    # configuration can replace the orchestrator safely.
+    from app.api import executions as executions_api
 
-    saved = await orchestrator.submit(execution, idempotency_key)
+    saved = await executions_api.orchestrator.submit(execution, idempotency_key)
+    status = getattr(saved.status, "value", saved.status)
     return {
         "accepted": True,
         "execution_id": str(saved.id),
-        "status": saved.status.value,
+        "status": str(status),
         "rule_id": str(rule.id),
         "rule": rule.name,
         "matched": True,
