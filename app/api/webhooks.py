@@ -9,7 +9,6 @@ from fastapi import APIRouter, Header, HTTPException, Request
 from app.core.config import settings
 from app.core.rule_engine import RuleEngine
 from app.core.rule_store import rule_store
-from app.core.orchestrator import ExecutionOrchestrator
 from app.models.execution import Execution
 
 router = APIRouter(prefix="/webhooks", tags=["webhooks"])
@@ -61,8 +60,6 @@ async def receive_webhook(
 
     from app.api.executions import orchestrator
 
-    if not isinstance(orchestrator, ExecutionOrchestrator):
-        raise RuntimeError("execution orchestrator is not configured")
     saved = await orchestrator.submit(execution, idempotency_key)
     return {
         "accepted": True,
