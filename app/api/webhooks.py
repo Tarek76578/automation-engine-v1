@@ -23,7 +23,9 @@ async def receive_webhook(
     x_webhook_id: str | None = Header(default=None),
 ) -> dict[str, Any]:
     if settings.inbound_webhook_secret:
-        if not x_webhook_secret or not hmac.compare_digest(x_webhook_secret, settings.inbound_webhook_secret):
+        if not x_webhook_secret or not hmac.compare_digest(
+            x_webhook_secret, settings.inbound_webhook_secret
+        ):
             raise HTTPException(status_code=401, detail="invalid webhook secret")
 
     rule = await rule_store.get(rule_id)
@@ -35,9 +37,13 @@ async def receive_webhook(
     try:
         payload = await request.json()
     except Exception as exc:
-        raise HTTPException(status_code=400, detail="Webhook body must be valid JSON") from exc
+        raise HTTPException(
+            status_code=400, detail="Webhook body must be valid JSON"
+        ) from exc
     if not isinstance(payload, dict):
-        raise HTTPException(status_code=400, detail="Webhook body must be a JSON object")
+        raise HTTPException(
+            status_code=400, detail="Webhook body must be a JSON object"
+        )
 
     event_type = payload.get("event_type") or payload.get("type")
     event = payload.get("event")
@@ -46,12 +52,20 @@ async def receive_webhook(
     elif event_type and "type" not in event:
         event = {**event, "type": event_type}
 
-    task_input = {**payload, "event": event, "event_type": event.get("type"), "rule_id": str(rule.id)}
+    task_input = {
+        **payload,
+        "event": event,
+        "event_type": event.get("type"),
+        "rule_id": str(rule.id),
+    }
     rule_data = rule.model_dump(mode="json", by_alias=True)
     task_input["rules"] = [rule_data]
     plan = engine.plan(task_input)
     if plan.goal != rule.name:
-        raise HTTPException(status_code=422, detail="Webhook received but rule conditions did not match")
+        raise HTTPException(
+            status_code=422,
+            detail="Webhook received but rule conditions did not match",
+        )
 
     execution = Execution(workflow=f"webhook:{rule.name}", input=task_input)
     idempotency_key = None
