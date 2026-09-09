@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import hmac
 from typing import Any
 from uuid import UUID
@@ -41,7 +40,7 @@ async def receive_webhook(
     if not isinstance(payload, dict):
         raise HTTPException(status_code=400, detail="Webhook body must be a JSON object")
 
-    event_type = payload.get("event_type") or payload.get("type") or rule.trigger.get("type") if rule.trigger else None
+    event_type = payload.get("event_type") or payload.get("type")
     event = payload.get("event")
     if not isinstance(event, dict):
         event = {"type": event_type, "payload": payload}
@@ -55,15 +54,16 @@ async def receive_webhook(
     if plan.goal != rule.name:
         raise HTTPException(status_code=422, detail="Webhook received but rule conditions did not match")
 
-    execution = Execution(
-        workflow=f"webhook:{rule.name}",
-        input=task_input,
-    )
+    execution = Execution(workflow=f"webhook:{rule.name}", input=task_input)
+    idempotency_key = None
     if x_webhook_id:
-        execution.idempotency_key = f"webhook:{rule.id}:{x_webhook_id[:200]}"
+        idempotency_key = f"webhook:{rule.id}:{x_webhook_id[:200]}"
 
-    orchestrator = request.app.state.execution_orchestrator
-    saved = await orchestrator.submit(execution, execution.idempotency_key)
+    from app.api.executions import orchestrator
+
+    if not isinstance(orchestrator, ExecutionOrchestrator):
+        raise RuntimeError("execution orchestrator is not configured")
+    saved = await orchestrator.submit(execution, idempotency_key)
     return {
         "accepted": True,
         "execution_id": str(saved.id),
