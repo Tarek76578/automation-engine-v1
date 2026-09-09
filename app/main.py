@@ -11,6 +11,7 @@ from app.api.health import router as health_router
 from app.api.meta import router as meta_router
 from app.api.metrics import router as metrics_router
 from app.api.rules import router as rules_router
+from app.api.webhooks import router as webhooks_router
 from app.core.config import settings
 from app.core.observability import configure_logging, new_request_id, request_id_var
 from app.integrations.meta import meta_graph_client
@@ -19,11 +20,13 @@ from app.models.execution import Execution
 
 configure_logging(settings.log_level)
 app = FastAPI(title=settings.app_name, version="0.6.0")
+app.state.execution_orchestrator = orchestrator
 app.include_router(health_router, prefix="/api")
 app.include_router(executions_router, prefix="/api")
 app.include_router(agents_router, prefix="/api")
 app.include_router(meta_router, prefix="/api")
 app.include_router(rules_router, prefix="/api")
+app.include_router(webhooks_router, prefix="/api")
 app.include_router(metrics_router, prefix="/api")
 
 
