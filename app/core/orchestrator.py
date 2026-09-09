@@ -12,6 +12,7 @@ from app.core.config import settings
 from app.core.job_queue import Job, Queue
 from app.core.observability import ACTIONS_TOTAL, EXECUTIONS_TOTAL, EXECUTION_DURATION_SECONDS, EXECUTION_RETRIES_TOTAL, IDEMPOTENCY_HITS_TOTAL
 from app.core.persistence import ExecutionRepository
+from app.core.rule_store import rule_store
 from app.core.state_machine import transition
 from app.integrations.n8n import N8nClient
 from app.models.agent import AgentTask
@@ -47,6 +48,20 @@ class ExecutionOrchestrator:
                 parameters = steps[0].get("parameters")
                 if isinstance(parameters, dict):
                     return parameters
+        return task_input
+
+    async def _prepare_task_input(self, execution: Execution) -> dict[str, Any]:
+        raw = execution.input.get("input", execution.input)
+        task_input = dict(raw) if isinstance(raw, dict) else {"value": raw}
+        rule_id = task_input.get("rule_id") or execution.input.get("rule_id")
+        if rule_id:
+            try:
+                rule = await rule_store.get(__import__("uuid").UUID(str(rule_id)))
+            except (ValueError, TypeError):
+                raise ValueError("rule_id must be a valid UUID") from None
+            if rule is None:
+                raise ValueError("rule not found")
+            task_input["rules"] = [rule.model_dump(mode="json", by_alias=True)]
         return task_input
 
     async def submit(self, execution: Execution, idempotency_key: str | None = None) -> Execution:
@@ -88,13 +103,10 @@ class ExecutionOrchestrator:
                 agent_name = execution.workflow
             else:
                 agent_name = settings.default_agent
-            task_input = execution.input.get("input", execution.input)
-            if not isinstance(task_input, dict):
-                task_input = {"value": task_input}
+            task_input = await self._prepare_task_input(execution)
             result = await self.runtime.execute_async(AgentTask(agent=agent_name, input=task_input))
             output: dict[str, Any] = dict(result.output)
             output.update({"agent": agent_name, "workflow": execution.workflow, "provider": result.provider, "model": result.model})
-
             plan = output.get("plan") if isinstance(output.get("plan"), dict) else {}
             requires_approval = bool(plan.get("requires_approval")) and execution.approval_decision != "approved"
             if requires_approval:
@@ -114,7 +126,6 @@ class ExecutionOrchestrator:
                 await self.repository.save(execution)
                 logger.warning("execution awaiting approval", extra={"execution_id": execution_id})
                 return execution
-
             action = str(output.get("action", "")).strip()
             if action:
                 try:
@@ -123,19 +134,15 @@ class ExecutionOrchestrator:
                 except Exception:
                     ACTIONS_TOTAL.labels(action=action, status="failed").inc()
                     raise
-
             webhook = execution.input.get("n8n_webhook")
             if webhook:
                 if self.n8n is None:
                     raise RuntimeError("n8n webhook requested but N8nClient is not configured")
                 output["n8n"] = await self.n8n.trigger_webhook(str(webhook), {"execution_id": str(execution.id), "output": output})
-
             if action and output["execution"].get("verified") is not True:
                 raise RuntimeError(f"action '{action}' could not be verified")
-
             if execution.approval_decision == "approved":
                 output["approval"] = {"required": True, "status": "approved", "approved_at": execution.approval_decided_at.isoformat() if execution.approval_decided_at else None, "approved_by": execution.approval_decided_by}
-
             transition(execution, ExecutionStatus.succeeded)
             execution.output = output
             execution.error = None
@@ -217,6 +224,7 @@ class ExecutionOrchestrator:
         execution.approval_decided_at = now
         execution.approval_token_hash = None
         execution.approval_expires_at = None
+        execution.approval_requested_at = execution.approval_requested_at
         execution.approval_token = None
         execution.error = "execution rejected by approver"
         transition(execution, ExecutionStatus.failed)
@@ -231,9 +239,7 @@ class ExecutionOrchestrator:
     async def _execute_planned_action(self, execution: Execution) -> Execution:
         started = monotonic()
         output = dict(execution.output or {})
-        task_input = execution.input.get("input", execution.input)
-        if not isinstance(task_input, dict):
-            task_input = {"value": task_input}
+        task_input = await self._prepare_task_input(execution)
         action = str(output.get("action", "")).strip()
         try:
             if action:
