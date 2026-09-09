@@ -1,5 +1,6 @@
 from html import escape
 import json
+import logging
 from urllib.parse import parse_qs
 
 from fastapi import FastAPI, Request
@@ -19,6 +20,7 @@ from app.integrations.meta_oauth import meta_oauth_manager
 from app.models.execution import Execution
 
 configure_logging(settings.log_level)
+logger = logging.getLogger(__name__)
 app = FastAPI(title=settings.app_name, version="0.6.0")
 app.state.execution_orchestrator = orchestrator
 app.include_router(health_router, prefix="/api")
@@ -50,6 +52,7 @@ async def correlation_middleware(request: Request, call_next):
             response.headers["Pragma"] = "no-cache"
         return response
     except Exception:
+        logger.exception("Unhandled request exception method=%s path=%s", request.method, request.url.path)
         return JSONResponse(status_code=500, content={"detail": "Internal server error", "request_id": request_id})
     finally:
         request_id_var.reset(token)
