@@ -19,6 +19,9 @@ class ActionExecutor:
         self.meta_client = meta_client or MetaGraphClient()
 
     async def execute(self, action: str, payload: dict[str, Any], execution_id: str) -> dict[str, Any]:
+        if action == "sequence":
+            return await self._execute_sequence(payload, execution_id)
+
         if action == "prepare_message":
             message = str(payload.get("message", payload.get("value", ""))).strip()
             if not message:
@@ -58,6 +61,29 @@ class ActionExecutor:
             return self._meta_result(action, result, execution_id)
 
         return {"action": action, "status": "planned", "verified": False, "verification": "no_builtin_action"}
+
+    async def _execute_sequence(self, payload: dict[str, Any], execution_id: str) -> dict[str, Any]:
+        actions = payload.get("actions")
+        if not isinstance(actions, list) or not actions:
+            raise ValueError("sequence action requires a non-empty actions list")
+        results: list[dict[str, Any]] = []
+        for item in actions:
+            if not isinstance(item, dict):
+                raise ValueError("each sequence item must be an object")
+            name = str(item.get("action", item.get("type", ""))).strip()
+            parameters = item.get("parameters", {})
+            if not name:
+                raise ValueError("sequence item action is required")
+            if not isinstance(parameters, dict):
+                raise ValueError(f"parameters for action {name} must be an object")
+            result = await self.execute(name, parameters, execution_id)
+            results.append({"action": name, "result": result})
+            if result.get("verified") is not True:
+                raise RuntimeError(f"action '{name}' could not be verified")
+        return {
+            "action": "sequence", "status": "executed", "results": results,
+            "verified": True, "verification": "all_sequence_actions_verified",
+        }
 
     @staticmethod
     def _meta_result(action: str, result: dict[str, Any], execution_id: str) -> dict[str, Any]:
